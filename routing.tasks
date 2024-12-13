@@ -1,0 +1,5 @@
+network load_file("routing.network")
+node set_attrs(nodecolor=[0.0, 0.0, 0.5])
+node[smithland,greenup] set_attrs(nodecolor=[1.0, 1.0, 0.0])
+node[elizabeth] set_attrs(linecolor=[1.0, 1.0, 0.0])
+node["willow-island",elizabeth] set_attrs(textcolor=[1.0, 0.0, 0.0])

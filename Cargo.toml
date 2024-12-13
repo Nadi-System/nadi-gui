@@ -1,0 +1,15 @@
+[package]
+name = "nadi-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abi_stable = "0.11.3"
+anyhow = "1.0.86"
+gdk = { version = "0.9.0", package = "gdk4", features = ["v4_12"] }
+gtk = { version = "0.9.1", package = "gtk4", features = ["v4_12"] }
+nadi_core = {path="../nadi_core/", features=["functions"]}
+vte4 = "0.8.0"
+
+[build-dependencies]
+glib-build-tools = "0.18.0"

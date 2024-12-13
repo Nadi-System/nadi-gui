@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="NadiGuiWindow" parent="GtkApplicationWindow">
+    <property name="title" translatable="1">NADI</property>
+    <property name="default-width">500</property>
+    <property name="default-height">500</property>
+    <property name="icon-name">x-office-presentation</property>
+    <property name="child">
+      <object class="GtkBox">
+	<property name="margin-start">10</property>
+	<property name="margin-end">10</property>
+	<property name="margin-top">10</property>
+	<property name="margin-bottom">10</property>
+        <property name="orientation">vertical</property>
+	<property name="spacing">10</property>
+        <child>
+          <object class="GtkBox">
+	    <property name="spacing">10</property>
+	    <child>
+	      <object class="GtkLabel">
+                <property name="label" translatable="1">Nadi Network File:</property>
+                <property name="justify">right</property>
+                <property name="width-chars">16</property>
+	      </object>
+	    </child>
+	    <child>
+	      <object class="GtkText" id="txt_browse">
+                <property name="width-chars">30</property>
+                <property name="hexpand">1</property>
+                <property name="editable">False</property>
+	      </object>
+	    </child>
+	    <child>
+	      <object class="GtkButton" id="btn_browse">
+		<property name="label">Browse</property>
+	      </object>
+	    </child>
+	    <child>
+	      <object class="GtkButton" id="btn_save">
+		<property name="label">Save</property>
+	      </object>
+	    </child>
+	  </object>
+	</child>
+	<child>
+	  <object class="GtkPaned">
+	    <property name="wide-handle">True</property>
+	    <property name="start-child">
+	      <object class="GtkScrolledWindow">
+		<property name="hexpand">False</property>
+		<property name="vexpand">True</property>
+		<property name="max-content-width">100</property>
+		<child>
+		  <object class="GtkDrawingArea" id="da_network">
+		    <property name="hexpand">True</property>
+		    <property name="vexpand">True</property>
+		    <property name="width-request">100</property>
+		    <!-- location for the network -->
+		  </object>
+		</child>
+	      </object>
+	    </property>
+	    <property name="end-child">
+	      <object class="GtkBox">
+		<property name="margin-start">10</property>
+		<property name="margin-end">10</property>
+		<property name="margin-top">10</property>
+		<property name="margin-bottom">10</property>
+		<property name="orientation">vertical</property>
+		<property name="spacing">10</property>
+		<child>
+		  <object class="GtkScrolledWindow">
+		    <property name="hexpand">True</property>
+		    <property name="vexpand">True</property>
+		    <child>
+		      <object class="GtkTextView" id="tv_frame">
+			<property name="vexpand">1</property>
+			<property name="focusable">1</property>
+			<property name="input-purpose">terminal</property>
+			<property name="monospace">1</property>
+		      </object>
+		    </child>
+		  </object>
+		</child>
+		<child>
+		  <object class="GtkScrolledWindow">
+		    <property name="hexpand">True</property>
+		    <property name="vexpand">True</property>
+		    <child>
+		      <object class="VteTerminal" id="term_main">
+			<property name="vexpand">1</property>
+			<property name="allow-hyperlink">1</property>
+			<property name="input-enabled">1</property>
+			<property name="scroll-on-keystroke">1</property>
+			<property name="scroll-on-output">1</property>
+		      </object>
+		    </child>
+		  </object>
+		</child>
+	      </object>
+            </property>
+	  </object>
+	</child>
+      </object>
+    </property>
+  </template>
+</interface>
