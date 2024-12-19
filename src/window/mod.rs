@@ -76,6 +76,77 @@ impl Window {
             self,
             move |_| { window.save_file().unwrap() }
         ));
+
+        self.imp()
+            .tv_frame
+            .buffer()
+            .connect_changed(clone!(@weak self as window => move |_| {
+            let tb = window.imp().tv_frame.buffer();
+                    let mut point = tb.start_iter();
+            tb.remove_all_tags(&point, &tb.end_iter());
+                    window.format_task(&tb, &mut point);
+                }));
+    }
+
+    fn format_comment(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
+        let prev = *point;
+        loop {
+            let tmp = *point;
+            while point.char().is_whitespace() && point.forward_char() {}
+            if point.char() == '#' {
+                while point.forward_char() && point.char() != '\n' {}
+            }
+            if tmp == *point {
+                break;
+            }
+        }
+        tb.apply_tag_by_name("comment", &prev, point);
+        point.backward_char();
+    }
+
+    fn format_string(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
+        let start = *point;
+        let mut prev = *point;
+        while point.forward_char() {
+            if point.char() == '"' && prev.char() != '\\' {
+                break;
+            }
+            prev = *point;
+        }
+        point.forward_char();
+        tb.apply_tag_by_name("string", &start, point);
+        point.backward_char();
+    }
+
+    fn format_name(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
+        let end = *point;
+        while point.backward_char() && (point.char().is_ascii_alphabetic() || point.char() == '_') {
+        }
+        point.forward_char();
+        tb.apply_tag_by_name("attribute", point, &end);
+        *point = end;
+    }
+
+    fn format_function(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
+        let end = *point;
+        while point.backward_char() && (point.char().is_ascii_alphabetic() || point.char() == '_') {
+        }
+        point.forward_char();
+        tb.apply_tag_by_name("function", point, &end);
+        *point = end;
+    }
+
+    fn format_task(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
+        self.format_comment(&tb, point);
+        while point.forward_char() {
+            match point.char() {
+                '\n' => self.format_comment(&tb, point),
+                '"' => self.format_string(&tb, point),
+                '=' => self.format_name(&tb, point),
+                '(' => self.format_function(&tb, point),
+                _ => (),
+            }
+        }
     }
 
     pub fn open(&self) {

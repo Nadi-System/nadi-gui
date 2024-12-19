@@ -2,8 +2,11 @@ network load_file("routing.network")
 node set_attrs(
 	nodecolor=[0.0, 1.0, 1.0],
 	textcolor=[1.0, 0.0, 1.0],
-	linecolor=[1.0, 1.0, 0.0]
+	linecolor=[1.0, 1.0, 0.0],
+        random=12.0,
+	another="random"
 )
+# testing comments here and other place
 node[smithland,greenup] set_attrs(nodecolor=[0.0, 1.0, 0.0])
 node[beaverfalls -> racine] set_attrs(linecolor=[1.0, 0.0, 0.0])
 node["willow-island",elizabeth] set_attrs(textcolor=[1.0, 0.0, 0.0])

@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
+  <object class="GtkTextBuffer" id="buf_frame">
+    <property name="tag-table">
+      <object class="GtkTextTagTable">
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">comment</property>
+	    <property name="foreground-rgba">rgba(100,100,100,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">string</property>
+	    <property name="foreground-rgba">rgba(100,200,100,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">attribute</property>
+	    <property name="foreground-rgba">rgba(100,100,200,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">function</property>
+	    <property name="foreground-rgba">rgba(200,200,100,1)</property>
+	  </object>
+	</child>
+      </object>
+    </property>
+  </object>
   <template class="NadiGuiWindow" parent="GtkApplicationWindow">
     <property name="title" translatable="1">NADI</property>
     <property name="default-width">500</property>
@@ -78,6 +108,7 @@
 			<property name="focusable">1</property>
 			<property name="input-purpose">terminal</property>
 			<property name="monospace">1</property>
+			<property name="buffer">buf_frame</property>
 		      </object>
 		    </child>
 		  </object>
