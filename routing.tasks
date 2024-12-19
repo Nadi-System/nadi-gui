@@ -1,5 +1,12 @@
 network load_file("routing.network")
-node set_attrs(nodecolor=[0.0, 0.0, 0.5])
-node[smithland,greenup] set_attrs(nodecolor=[1.0, 1.0, 0.0])
-node[elizabeth] set_attrs(linecolor=[1.0, 1.0, 0.0])
+node set_attrs(
+	nodecolor=[0.0, 1.0, 1.0],
+	textcolor=[1.0, 0.0, 1.0],
+	linecolor=[1.0, 1.0, 0.0]
+)
+node[smithland,greenup] set_attrs(nodecolor=[0.0, 1.0, 0.0])
+node[beaverfalls -> racine] set_attrs(linecolor=[1.0, 0.0, 0.0])
 node["willow-island",elizabeth] set_attrs(textcolor=[1.0, 0.0, 0.0])
+
+# todo: make the `node[athens].nodelabel = "Something"` syntax work
+node[athens] set_attrs(nodelabel="-ATHENS {INDEX}-", textcolor=[0.2, 0.7, 0.2])

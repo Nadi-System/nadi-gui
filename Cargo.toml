@@ -6,9 +6,13 @@ edition = "2021"
 [dependencies]
 abi_stable = "0.11.3"
 anyhow = "1.0.86"
+cairo-rs = { version = "0.20.7", features = ["pdf", "png", "svg", "v1_18"] }
+colored = "2.2.0"
+gag = "1.0.0"
 gdk = { version = "0.9.0", package = "gdk4", features = ["v4_12"] }
 gtk = { version = "0.9.1", package = "gtk4", features = ["v4_12"] }
 nadi_core = {path="../nadi_core/", features=["functions"]}
+termimad = "0.31.1"
 vte4 = "0.8.0"
 
 [build-dependencies]

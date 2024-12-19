@@ -48,7 +48,9 @@ impl ObjectImpl for Window {
         self.parent_constructed();
         // Setup
         let obj = self.obj();
+        obj.setup_data();
         obj.setup_callbacks();
+        obj.setup_actions();
         obj.setup_drawing_area();
         obj.setup_term();
     }

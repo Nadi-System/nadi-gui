@@ -1,3 +1,4 @@
+mod network;
 mod window;
 
 use gtk::gio::ApplicationFlags;
@@ -19,13 +20,21 @@ fn main() -> glib::ExitCode {
     app.connect_startup(|_| load_css());
     app.connect_open(|a, files, _| {
         let window = Window::new(a);
-        window.reload_file(&files[0]).unwrap();
+        window.open_file(&files[0]).unwrap();
         window.present();
     });
+    set_accels(&app);
 
     // Run the application
     let args: Vec<String> = std::env::args().collect();
     app.run_with_args(&args)
+}
+
+fn set_accels(app: &Application) {
+    app.set_accels_for_action("win.close", &["<Ctrl>W"]);
+    app.set_accels_for_action("win.open", &["<Ctrl>O"]);
+    app.set_accels_for_action("win.save", &["<Ctrl>S"]);
+    app.set_accels_for_action("win.export", &["<Ctrl>E"]);
 }
 
 fn build_ui(app: &Application) {
