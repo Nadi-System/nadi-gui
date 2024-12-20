@@ -960,6 +960,7 @@ dependencies = [
  "gdk4",
  "glib-build-tools",
  "gtk4",
+ "itertools 0.13.0",
  "nadi_core",
  "termimad",
  "vte4",

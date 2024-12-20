@@ -20,6 +20,10 @@ pub struct Window {
     #[template_child]
     pub tv_frame: TemplateChild<gtk::TextView>,
     #[template_child]
+    pub btn_run: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub btn_export: TemplateChild<gtk::Button>,
+    #[template_child]
     pub term_main: TemplateChild<vte4::Terminal>,
     pub network: RefCell<Option<Network>>,
 }

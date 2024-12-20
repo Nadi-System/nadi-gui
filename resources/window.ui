@@ -65,11 +65,6 @@
 		<property name="label">Browse</property>
 	      </object>
 	    </child>
-	    <child>
-	      <object class="GtkButton" id="btn_save">
-		<property name="label">Save</property>
-	      </object>
-	    </child>
 	  </object>
 	</child>
 	<child>
@@ -98,6 +93,38 @@
 		<property name="margin-bottom">10</property>
 		<property name="orientation">vertical</property>
 		<property name="spacing">10</property>
+		<child>
+		  <object class="GtkBox">
+		    <property name="margin-start">10</property>
+		    <property name="margin-end">10</property>
+		    <property name="margin-top">10</property>
+		    <property name="margin-bottom">10</property>
+		    <property name="orientation">horizontal</property>
+		    <property name="hexpand">0</property>
+		    <property name="spacing">10</property>
+		    <child>
+		      <object class="GtkButton" id="btn_save">
+			<property name="label">Save</property>
+			<property name="icon-name">document-save</property>
+			<property name="tooltip-text">Save the Buffer to File</property>
+		      </object>
+		    </child>
+		    <child>
+		      <object class="GtkButton" id="btn_run">
+			<property name="label">Run</property>
+			<property name="icon-name">run-code</property>
+			<property name="tooltip-text">Run Selection or the whole Buffer</property>
+		      </object>
+		    </child>
+		    <child>
+		      <object class="GtkButton" id="btn_export">
+			<property name="label">Export</property>
+			<property name="icon-name">export-image</property>
+			<property name="tooltip-text">Export the Image to a File (SVG/PNG/PDF)</property>
+		      </object>
+		    </child>
+		  </object>
+		</child>
 		<child>
 		  <object class="GtkScrolledWindow">
 		    <property name="hexpand">True</property>

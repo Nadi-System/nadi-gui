@@ -8,6 +8,7 @@ use glib::{clone, Object};
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{gio, glib, Application};
+use itertools::Itertools;
 use nadi_core::{functions::NadiFunctions, network::Network, node::NodeInner};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -77,6 +78,12 @@ impl Window {
             move |_| { window.save_file().unwrap() }
         ));
 
+        self.imp().btn_export.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| { window.export() }
+        ));
+
         self.imp()
             .tv_frame
             .buffer()
@@ -85,7 +92,29 @@ impl Window {
                     let mut point = tb.start_iter();
             tb.remove_all_tags(&point, &tb.end_iter());
                     window.format_task(&tb, &mut point);
-                }));
+            }));
+
+        self.imp().btn_run.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| {
+                let buf = window.imp().tv_frame.buffer();
+                let tm = &window.imp().term_main;
+                let mut mark = buf.iter_at_mark(&buf.selection_bound());
+                let mut ins = buf.iter_at_mark(&buf.get_insert());
+                if mark == ins {
+                    mark = buf.start_iter();
+                    ins = buf.end_iter();
+                }
+                let selection = buf.text(&ins, &mark, true);
+                tm.feed(selection.replace("\n", "\r\n").as_bytes());
+                tm.feed("\r\n".as_bytes());
+                run_task(tm, &window.imp().da_network, format!("{selection}\n"));
+                term_prompt(&tm);
+                // since the task could have changed the network properties
+                window.imp().da_network.queue_draw();
+            }
+        ));
     }
 
     fn format_comment(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
@@ -179,7 +208,7 @@ impl Window {
             .accept_label("Save");
         let txt = self.imp().txt_browse.text();
         if !txt.is_empty() {
-            dialog = dialog.initial_file(&gio::File::for_path(txt));
+            dialog = dialog.initial_file(&gio::File::for_path("export.pdf"));
         };
 
         dialog.build().save(
@@ -287,7 +316,8 @@ impl Window {
 
     fn setup_term(&self) {
         let term = &self.imp().term_main;
-        term.feed(">> ".as_bytes());
+        term.feed(b"Nadi Terminal: Run nadi tasks here.");
+        term_prompt(term);
         unsafe { term.set_data("current_line", String::new()) };
         let da = &self.imp().da_network;
         term.connect_commit(clone!(
@@ -298,23 +328,108 @@ impl Window {
                     // todo handle other keypress than chars
                     return;
                 }
+                // println!("{ch:?} {flag}");
                 match ch {
                     "\r" => {
-                        tm.feed("\r\n".as_bytes());
                         let line: &mut String =
                             unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
                         match line.trim() {
                             "" => (),
                             "clear" => tm.reset(true, false),
                             _ => {
+                                tm.feed(b"\r\n");
                                 run_task(tm, &da, format!("{line}\n"));
-                                tm.feed("\r\n".as_bytes());
                                 // since the task could have changed the network properties
                                 da.queue_draw();
                             }
                         };
                         line.clear();
-                        tm.feed(">> ".as_bytes());
+                        term_prompt(&tm);
+                    }
+                    // Ctrl+C
+                    "\u{3}" => {
+                        let line: &mut String =
+                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
+                        line.clear();
+                        tm.feed(b" ^C");
+                        term_prompt(&tm);
+                    }
+                    // backspace
+                    "\u{8}" => {
+                        let line: &mut String =
+                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
+                        if line.pop().is_some() {
+                            tm.feed(ch.as_bytes());
+                        }
+                    }
+                    // tab
+                    "\u{9}" => {
+                        let line: &mut String =
+                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
+                        let cmd: Vec<String> =
+                            line.trim().split(' ').map(|s| s.to_string()).collect();
+                        match cmd[0].as_str() {
+                            "node" => {
+                                let f = nadi_functions(&da);
+                                let funcs: Vec<&str> = f
+                                    .node_alias()
+                                    .keys()
+                                    .chain(f.node_functions().keys())
+                                    .map(|k| k.as_str())
+                                    .collect();
+                                let rest = cmd.get(1).map(|s| s.as_str()).unwrap_or_default();
+                                completion(tm, line, rest, &funcs);
+                            }
+                            "network" => {
+                                let f = nadi_functions(&da);
+                                let funcs: Vec<&str> = f
+                                    .network_alias()
+                                    .keys()
+                                    .chain(f.network_functions().keys())
+                                    .map(|k| k.as_str())
+                                    .collect();
+                                let rest = cmd.get(1).map(|s| s.as_str()).unwrap_or_default();
+                                completion(tm, line, rest, &funcs);
+                            }
+                            "help" => {
+                                let f = nadi_functions(&da);
+                                match cmd.get(1).map(|s| s.as_str()).unwrap_or_default() {
+                                    "node" => {
+                                        let funcs: Vec<&str> = f
+                                            .node_alias()
+                                            .keys()
+                                            .chain(f.node_functions().keys())
+                                            .map(|k| k.as_str())
+                                            .collect();
+                                        let rest =
+                                            cmd.get(2).map(|s| s.as_str()).unwrap_or_default();
+                                        completion(tm, line, rest, &funcs);
+                                    }
+                                    "network" => {
+                                        let funcs: Vec<&str> = f
+                                            .network_alias()
+                                            .keys()
+                                            .chain(f.network_functions().keys())
+                                            .map(|k| k.as_str())
+                                            .collect();
+                                        let rest =
+                                            cmd.get(2).map(|s| s.as_str()).unwrap_or_default();
+                                        completion(tm, line, rest, &funcs);
+                                    }
+                                    rest => {
+                                        let mut funcs: Vec<&str> = vec!["node", "network"];
+                                        funcs.extend(f.node_alias().keys().map(|k| k.as_str()));
+                                        funcs.extend(f.node_functions().keys().map(|k| k.as_str()));
+                                        funcs.extend(f.network_alias().keys().map(|k| k.as_str()));
+                                        funcs.extend(
+                                            f.network_functions().keys().map(|k| k.as_str()),
+                                        );
+                                        completion(tm, line, rest, &funcs);
+                                    }
+                                }
+                            }
+                            x => completion(tm, line, x, &["node", "network", "help"]),
+                        }
                     }
                     _ => {
                         let line: &mut String =
@@ -328,12 +443,21 @@ impl Window {
     }
 }
 
+fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
+    if let Some(func) = unsafe { darea.data::<NadiFunctions>("functions") } {
+        let funcs: &NadiFunctions = unsafe { &*func.as_ptr() };
+        funcs
+    } else {
+        panic!("Functions not found");
+    }
+}
+
 fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
     let funcs = if let Some(func) = unsafe { darea.data::<NadiFunctions>("functions") } {
         let funcs: &NadiFunctions = unsafe { &*func.as_ptr() };
         funcs
     } else {
-        term.feed("No network set".as_bytes());
+        term.feed(b"No network set");
         return;
     };
     let mut skin = termimad::MadSkin::default_dark();
@@ -346,9 +470,19 @@ fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
             match n {
                 "node" => {
                     if let Some(f) = funcs.node(c) {
-                        push_func_help(&skin, term, "node", &f.name(), &f.signature(), &f.help());
+                        push_func_help(
+                            &skin,
+                            term,
+                            format!(
+                                "{} {} {}\r\n",
+                                "node".red(),
+                                f.name().truecolor(80, 80, 200),
+                                f.signature().blue(),
+                            ),
+                            &f.help(),
+                        );
                     } else {
-                        term.feed("Node Function Not Found".as_bytes());
+                        term.feed(b"Node Function Not Found");
                     }
                 }
                 "network" => {
@@ -356,23 +490,61 @@ fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
                         push_func_help(
                             &skin,
                             term,
-                            "network",
-                            &f.name(),
-                            &f.signature(),
+                            format!(
+                                "{} {} {}\r\n",
+                                "network".red(),
+                                f.name().truecolor(80, 80, 200),
+                                f.signature().blue(),
+                            ),
                             &f.help(),
                         );
                     } else {
-                        term.feed("Node Function Not Found".as_bytes());
+                        term.feed(b"Node Function Not Found");
                     }
                 }
-                _ => term.feed("Invalid help subcommand use node or network".as_bytes()),
+                _ => term.feed(b"Invalid help subcommand use node or network"),
             };
         } else {
-            if let Some(f) = funcs.node(cmd) {
-                push_func_help(&skin, term, "node", &f.name(), &f.signature(), &f.help());
-            }
-            if let Some(f) = funcs.network(cmd) {
-                push_func_help(&skin, term, "network", &f.name(), &f.signature(), &f.help());
+            if cmd.trim().is_empty() {
+                push_func_help(&skin, term, format!(
+		    "{} {}\r\n",
+		    "NADI".red(),
+		    "Terminal".blue(),
+		), "
+# Autocompletion
+Press `tab` key on empty line for available commands, also on function name entry for completing based on available functions.
+
+# Available commands
+- `help`: show the help message for the function (use subcommands `node` and `network` for the type of function)
+- Any other input is interpreted as NADI task script and run accordingly. The script should be complete.
+");
+            } else {
+                if let Some(f) = funcs.node(cmd) {
+                    push_func_help(
+                        &skin,
+                        term,
+                        format!(
+                            "{} {} {}\r\n",
+                            "node".red(),
+                            f.name().truecolor(80, 80, 200),
+                            f.signature().blue(),
+                        ),
+                        &f.help(),
+                    );
+                }
+                if let Some(f) = funcs.network(cmd) {
+                    push_func_help(
+                        &skin,
+                        term,
+                        format!(
+                            "{} {} {}\r\n",
+                            "network".red(),
+                            f.name().truecolor(80, 80, 200),
+                            f.signature().blue(),
+                        ),
+                        &f.help(),
+                    );
+                }
             }
         }
         return;
@@ -381,7 +553,7 @@ fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
         let net: &mut Network = unsafe { &mut *net.as_ptr() };
         net
     } else {
-        term.feed("No network set".as_bytes());
+        term.feed(b"No network set");
         return;
     };
     let script = match nadi_core::parser::functions::parse_script_complete(&line) {
@@ -411,24 +583,56 @@ fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
     }
 }
 
-fn push_func_help(
-    skin: &termimad::MadSkin,
-    term: &vte4::Terminal,
-    ty: &str,
-    name: &str,
-    sig: &str,
-    help: &str,
-) {
-    term.feed(
-        format!(
-            "{} {} {}\r\n",
-            ty.red(),
-            name.truecolor(80, 80, 200),
-            sig.blue(),
-        )
-        .as_bytes(),
-    );
+fn push_func_help(skin: &termimad::MadSkin, term: &vte4::Terminal, signature: String, help: &str) {
+    term.feed(signature.as_bytes());
     let txt = skin.text(help, Some(term.width() as usize));
     term.feed(txt.to_string().replace("\n", "\r\n").as_bytes());
     term.feed("\r\n".as_bytes());
+}
+
+fn term_prompt(tm: &vte4::Terminal) {
+    tm.feed(format!("\r\n{} ", ">>".blue()).as_bytes())
+}
+
+fn completion(tm: &vte4::Terminal, line: &mut String, pre: &str, options: &[&str]) {
+    let mut pos = options.iter().filter_map(|p| p.strip_prefix(pre));
+    match pos.clone().count() {
+        0 => tm.feed(&[7]), // bell
+        1 => {
+            let comp = pos.next().unwrap();
+            line.push_str(comp);
+            tm.feed(comp.as_bytes());
+        }
+        _ => {
+            tm.feed(b"\r\n");
+            tm.feed(
+                pos.clone()
+                    .map(|y| format!("{pre}{y}"))
+                    .join(" ")
+                    .as_bytes(),
+            );
+            term_prompt(tm);
+            // add the common prefix from the alternatives
+            let pos: Vec<&str> = pos.collect();
+            let common = common_prefix(&pos);
+            line.push_str(common);
+            tm.feed(line.as_bytes());
+        }
+    }
+}
+
+fn common_prefix<'a>(strs: &'a [&str]) -> &'a str {
+    if strs.is_empty() {
+        return "";
+    }
+    let mut pre = strs[0].len();
+    for s in strs.iter() {
+        while !s.starts_with(&strs[0][0..pre]) {
+            if pre <= 0 {
+                return "";
+            }
+            pre -= 1; // Shorten the prefix
+        }
+    }
+    &strs[0][0..pre]
 }

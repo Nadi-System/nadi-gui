@@ -1,15 +1,15 @@
 network load_file("routing.network")
 node set_attrs(
 	nodecolor=[0.0, 1.0, 1.0],
-	textcolor=[1.0, 0.0, 1.0],
-	linecolor=[1.0, 1.0, 0.0],
-        random=12.0,
-	another="random"
+	textcolor=[0.0, 0.0, 0.0],
+	linecolor=[0.5, 0.5, 0.5]
 )
-# testing comments here and other place
-node[smithland,greenup] set_attrs(nodecolor=[0.0, 1.0, 0.0])
-node[beaverfalls -> racine] set_attrs(linecolor=[1.0, 0.0, 0.0])
-node["willow-island",elizabeth] set_attrs(textcolor=[1.0, 0.0, 0.0])
-
+# 4 representative sections of the ohio river for analysis
+node[emsworth -> smithland] set_attrs(nodecolor=[0.7, 0.5, 0.2])
+node[emsworth -> "willow-island"] set_attrs(linecolor=[0.0, 1.0, 0.0])
+node["willow-island" -> racine] set_attrs(linecolor=[1.0, 0.0, 0.7])
+node[racine -> mcalpine] set_attrs(linecolor=[1.0, 0.8, 0.3])
+node[mcalpine -> smithland] set_attrs(linecolor=[0.0, 0.0, 1.0])
+node["willow-island",racine,mcalpine,smithland] set_attrs(textcolor=[1.0, 0.0, 0.0], nodecolor=[1.0, 0.0, 0.0])
 # todo: make the `node[athens].nodelabel = "Something"` syntax work
-node[athens] set_attrs(nodelabel="-ATHENS {INDEX}-", textcolor=[0.2, 0.7, 0.2])
+node[smithland] set_attrs(nodelabel="Smithland (Outlet)")

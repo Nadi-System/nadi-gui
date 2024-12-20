@@ -2,6 +2,7 @@
 <gresources>
   <gresource prefix="/org/zerosofts/NadiGui/">
     <file compressed="true" preprocess="xml-stripblanks">window.ui</file>
-    <!-- <file>icons/slide.svg</file> -->
+    <file preprocess="xml-stripblanks">icons/run-code.svg</file>
+    <file preprocess="xml-stripblanks">icons/export-image.svg</file>
   </gresource>
 </gresources>
