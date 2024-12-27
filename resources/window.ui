@@ -17,8 +17,57 @@
 	</child>
 	<child type="tag">
 	  <object class="GtkTextTag">
-	    <property name="name">attribute</property>
-	    <property name="foreground-rgba">rgba(100,100,200,1)</property>
+	    <property name="name">variable</property>
+	    <property name="foreground-rgba">rgba(50,150,50,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">bool</property>
+	    <property name="foreground-rgba">rgba(50,50,150,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">error</property>
+	    <property name="underline">error</property>
+	    <property name="underline-rgba">rgba(250,150,150,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">pathsep</property>
+	    <property name="foreground-rgba">rgba(50,50,250,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">symbols</property>
+	    <property name="foreground-rgba">rgba(50,50,250,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">equal</property>
+	    <property name="foreground-rgba">rgba(50,50,250,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">number</property>
+	    <property name="foreground-rgba">rgba(50,250,50,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">datetime</property>
+	    <property name="foreground-rgba">rgba(150,250,50,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">keyword</property>
+	    <property name="foreground-rgba">rgba(150,50,50,1)</property>
 	  </object>
 	</child>
 	<child type="tag">

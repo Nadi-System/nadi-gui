@@ -43,6 +43,9 @@ pub fn draw_network(
     h: i32,
     darea: Option<&gtk::DrawingArea>,
 ) {
+    if net.nodes_count() == 0 {
+	return;
+    }
     ctx.set_source_rgb(0.0, 0.0, 1.0);
     ctx.set_font_size(14.0);
     let offx = 10.0;

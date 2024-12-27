@@ -5,11 +5,15 @@ node set_attrs(
 	linecolor=[0.5, 0.5, 0.5]
 )
 # 4 representative sections of the ohio river for analysis
-node[emsworth -> smithland] set_attrs(nodecolor=[0.7, 0.5, 0.2])
-node[emsworth -> "willow-island"] set_attrs(linecolor=[0.0, 1.0, 0.0])
-node["willow-island" -> racine] set_attrs(linecolor=[1.0, 0.0, 0.7])
-node[racine -> mcalpine] set_attrs(linecolor=[1.0, 0.8, 0.3])
-node[mcalpine -> smithland] set_attrs(linecolor=[0.0, 0.0, 1.0])
-node["willow-island",racine,mcalpine,smithland] set_attrs(textcolor=[1.0, 0.0, 0.0], nodecolor=[1.0, 0.0, 0.0])
+
+node[smithland].nodelabel="Smithland (Outlet)"
+
+node[emsworth -> smithland].nodecolor=[0.7, 0.5, 0.2]
+node[emsworth -> "willow-island"].linecolor=[0.0, 1.0, 0.0]
+node["willow-island" -> racine].linecolor=[1.0, 0.0, 0.7]
+node[racine -> mcalpine].linecolor=[1.0, 0.8, 0.3]
+node[mcalpine -> smithland].linecolor=[0.0, 0.0, 1.0]
+node["willow-island",racine,mcalpine,smithland]
+ set_attrs(textcolor=[1.0, 0.0, 0.0], nodecolor=[1.0, 0.0, 0.0])
 # todo: make the `node[athens].nodelabel = "Something"` syntax work
-node[smithland] set_attrs(nodelabel="Smithland (Outlet)")
+node[smithland].nodelabel="Smithland (Outlet)"

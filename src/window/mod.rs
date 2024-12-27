@@ -9,7 +9,9 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{gio, glib, Application};
 use itertools::Itertools;
-use nadi_core::{functions::NadiFunctions, network::Network, node::NodeInner};
+use nadi_core::{tasks::TaskContext, functions::NadiFunctions, network::Network, node::NodeInner};
+use nadi_core::parser::tokenizer::TaskToken;
+use nadi_core::parser::NadiError;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::Iterator;
@@ -29,11 +31,8 @@ impl Window {
     }
 
     fn setup_data(&self) {
-        let net = Network::default();
-        let funcs = NadiFunctions::new();
         unsafe {
-            self.imp().da_network.set_data("network", net);
-            self.imp().da_network.set_data("functions", funcs);
+            self.imp().da_network.set_data("tasks_ctx", TaskContext::new(None));
         }
     }
 
@@ -89,9 +88,9 @@ impl Window {
             .buffer()
             .connect_changed(clone!(@weak self as window => move |_| {
             let tb = window.imp().tv_frame.buffer();
-                    let mut point = tb.start_iter();
-            tb.remove_all_tags(&point, &tb.end_iter());
-                    window.format_task(&tb, &mut point);
+		// todo, only do this for current line
+		tb.remove_all_tags(&tb.start_iter(), &tb.end_iter());
+                window.format_task(&tb);
             }));
 
         self.imp().btn_run.connect_clicked(clone!(
@@ -107,9 +106,7 @@ impl Window {
                     ins = buf.end_iter();
                 }
                 let selection = buf.text(&ins, &mark, true);
-                tm.feed(selection.replace("\n", "\r\n").as_bytes());
-                tm.feed("\r\n".as_bytes());
-                run_task(tm, &window.imp().da_network, format!("{selection}\n"));
+                run_task(tm, &window.imp().da_network, format!("{}\n", selection.trim()));
                 term_prompt(&tm);
                 // since the task could have changed the network properties
                 window.imp().da_network.queue_draw();
@@ -117,65 +114,36 @@ impl Window {
         ));
     }
 
-    fn format_comment(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
-        let prev = *point;
-        loop {
-            let tmp = *point;
-            while point.char().is_whitespace() && point.forward_char() {}
-            if point.char() == '#' {
-                while point.forward_char() && point.char() != '\n' {}
-            }
-            if tmp == *point {
-                break;
-            }
-        }
-        tb.apply_tag_by_name("comment", &prev, point);
-        point.backward_char();
-    }
-
-    fn format_string(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
-        let start = *point;
-        let mut prev = *point;
-        while point.forward_char() {
-            if point.char() == '"' && prev.char() != '\\' {
-                break;
-            }
-            prev = *point;
-        }
-        point.forward_char();
-        tb.apply_tag_by_name("string", &start, point);
-        point.backward_char();
-    }
-
-    fn format_name(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
-        let end = *point;
-        while point.backward_char() && (point.char().is_ascii_alphabetic() || point.char() == '_') {
-        }
-        point.forward_char();
-        tb.apply_tag_by_name("attribute", point, &end);
-        *point = end;
-    }
-
-    fn format_function(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
-        let end = *point;
-        while point.backward_char() && (point.char().is_ascii_alphabetic() || point.char() == '_') {
-        }
-        point.forward_char();
-        tb.apply_tag_by_name("function", point, &end);
-        *point = end;
-    }
-
-    fn format_task(&self, tb: &gtk::TextBuffer, point: &mut gtk::TextIter) {
-        self.format_comment(&tb, point);
-        while point.forward_char() {
-            match point.char() {
-                '\n' => self.format_comment(&tb, point),
-                '"' => self.format_string(&tb, point),
-                '=' => self.format_name(&tb, point),
-                '(' => self.format_function(&tb, point),
-                _ => (),
-            }
-        }
+    fn format_task(&self, tb: &gtk::TextBuffer) {
+	let mut point = tb.start_iter();
+	let text = tb.text(&point, &tb.end_iter(), true);
+	for line in text.lines() {
+	    let mut l = point;
+	    l.forward_line();
+	    if let Ok(tags) = nadi_core::parser::tokenizer::get_tokens(line){
+		for t in tags {
+		    let st = point;
+		    point.forward_chars(t.content.len() as i32);
+		    let tg = match t.ty {
+			TaskToken::Comment => "comment",
+			TaskToken::Keyword(_) => "keyword",
+			TaskToken::Function  => "function",
+			TaskToken::Variable => "variable",
+			TaskToken::String(_) => "string",
+			TaskToken::Integer | TaskToken::Float => "number",
+			TaskToken::Date | TaskToken::Time | TaskToken::DateTime => "datetime",
+			TaskToken::NewLine | TaskToken::WhiteSpace => continue,
+			TaskToken::PathSep => "pathsep",
+			TaskToken::Assignment => "equal",
+			_ => continue,
+		    };
+		    tb.apply_tag_by_name(tg, &st, &point);
+		}
+	    } else {
+		tb.apply_tag_by_name("error", &point, &l);
+	    }
+	    point = l;
+	}
     }
 
     pub fn open(&self) {
@@ -231,19 +199,23 @@ impl Window {
         let txt = buf
             .text(&buf.start_iter(), &buf.end_iter(), true)
             .to_string();
-        let script = nadi_core::parser::functions::parse_script_complete(&txt)
-            .map_err(anyhow::Error::msg)?;
-
-        let functions = NadiFunctions::new();
-        let mut net = Network::default();
-        for fc in &script {
-            functions
-                .execute(fc, &mut net)
-                .map_err(anyhow::Error::msg)?;
-        }
+	let tm = &self.imp().term_main;
+	let mut tasks_ctx = TaskContext::new(None);
+	// for fc in tasks {
+        //     match tasks_ctx.execute(fc) {
+	// 	Ok(Some(p)) => tm.feed(p.replace("\n", "\r\n").as_bytes()),
+	// 	Err(p) => {
+	// 	    tm.feed(p.replace("\n", "\r\n").as_bytes());
+	// 	    break;
+	// 	},
+	// 	_ => (),
+	//     }
+	// }
         unsafe {
-            self.imp().da_network.set_data("network", net);
+            self.imp().da_network.set_data("tasks_ctx", tasks_ctx);
         }
+	run_task(tm, &self.imp().da_network, format!("{txt}\n"));
+        term_prompt(&tm);
         self.imp().da_network.queue_draw();
         Ok(())
     }
@@ -307,9 +279,9 @@ impl Window {
         self.imp().da_network.set_draw_func(move |da, ctx, w, h| {
             // network data will be available when a new network is loaded.
             // TODO, make a different network data type for graph/plots
-            if let Some(net) = unsafe { da.data::<Network>("network") } {
-                let net: &Network = unsafe { &*net.as_ptr() };
-                network::draw_network(net, ctx, w, h, Some(da));
+            if let Some(tctx) = unsafe { da.data::<TaskContext>("tasks_ctx") } {
+                let tctx: &TaskContext = unsafe { &*tctx.as_ptr() };
+                network::draw_network(&tctx.network, ctx, w, h, Some(da));
             }
         });
     }
@@ -336,9 +308,10 @@ impl Window {
                         match line.trim() {
                             "" => (),
                             "clear" => tm.reset(true, false),
-                            _ => {
-                                tm.feed(b"\r\n");
-                                run_task(tm, &da, format!("{line}\n"));
+                            l => {
+                                tm.feed(b"\r\x1B[A");
+				term_prompt(&tm);
+                                run_task(tm, &da, format!("{}\n", l));
                                 // since the task could have changed the network properties
                                 da.queue_draw();
                             }
@@ -444,142 +417,73 @@ impl Window {
 }
 
 fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
-    if let Some(func) = unsafe { darea.data::<NadiFunctions>("functions") } {
-        let funcs: &NadiFunctions = unsafe { &*func.as_ptr() };
-        funcs
+    if let Some(ctx) = unsafe { darea.data::<TaskContext>("tasks_ctx") } {
+        let ctx: &TaskContext = unsafe { &*ctx.as_ptr() };
+        &ctx.functions
     } else {
         panic!("Functions not found");
     }
 }
 
 fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
-    let funcs = if let Some(func) = unsafe { darea.data::<NadiFunctions>("functions") } {
-        let funcs: &NadiFunctions = unsafe { &*func.as_ptr() };
-        funcs
-    } else {
-        term.feed(b"No network set");
+    if line.trim() == "help" {
+	term.feed(b"TODO: Help \r\n");
         return;
-    };
+    }
+    match nadi_core::parser::tokenizer::get_tokens(&line) {
+	Ok(tokens) => {
+	    for t in &tokens {
+		term.feed(t.colored().replace("\n", "\r\n").as_bytes());
+	    }
+	    term.feed("\r\n".as_bytes());
+	    match nadi_core::parser::tasks::parse(tokens) {
+		Ok(tasks) => {
+		    run_tasks(term, darea, tasks);
+		}
+		Err(e) => {
+		    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+		}
+	    }
+	},
+	Err(e) => {
+	    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+	}
+    }
+}
+
+
+fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_core::tasks::Task>) {
     let mut skin = termimad::MadSkin::default_dark();
     for h in &mut skin.headers {
         h.align = termimad::Alignment::Left;
     }
-    if let Some(cmd) = line.strip_prefix("help") {
-        let cmd = cmd.trim();
-        if let Some((n, c)) = cmd.split_once(' ') {
-            match n {
-                "node" => {
-                    if let Some(f) = funcs.node(c) {
-                        push_func_help(
-                            &skin,
-                            term,
-                            format!(
-                                "{} {} {}\r\n",
-                                "node".red(),
-                                f.name().truecolor(80, 80, 200),
-                                f.signature().blue(),
-                            ),
-                            &f.help(),
-                        );
-                    } else {
-                        term.feed(b"Node Function Not Found");
-                    }
-                }
-                "network" => {
-                    if let Some(f) = funcs.network(c) {
-                        push_func_help(
-                            &skin,
-                            term,
-                            format!(
-                                "{} {} {}\r\n",
-                                "network".red(),
-                                f.name().truecolor(80, 80, 200),
-                                f.signature().blue(),
-                            ),
-                            &f.help(),
-                        );
-                    } else {
-                        term.feed(b"Node Function Not Found");
-                    }
-                }
-                _ => term.feed(b"Invalid help subcommand use node or network"),
-            };
-        } else {
-            if cmd.trim().is_empty() {
-                push_func_help(&skin, term, format!(
-		    "{} {}\r\n",
-		    "NADI".red(),
-		    "Terminal".blue(),
-		), "
-# Autocompletion
-Press `tab` key on empty line for available commands, also on function name entry for completing based on available functions.
-
-# Available commands
-- `help`: show the help message for the function (use subcommands `node` and `network` for the type of function)
-- Any other input is interpreted as NADI task script and run accordingly. The script should be complete.
-");
-            } else {
-                if let Some(f) = funcs.node(cmd) {
-                    push_func_help(
-                        &skin,
-                        term,
-                        format!(
-                            "{} {} {}\r\n",
-                            "node".red(),
-                            f.name().truecolor(80, 80, 200),
-                            f.signature().blue(),
-                        ),
-                        &f.help(),
-                    );
-                }
-                if let Some(f) = funcs.network(cmd) {
-                    push_func_help(
-                        &skin,
-                        term,
-                        format!(
-                            "{} {} {}\r\n",
-                            "network".red(),
-                            f.name().truecolor(80, 80, 200),
-                            f.signature().blue(),
-                        ),
-                        &f.help(),
-                    );
-                }
-            }
-        }
-        return;
-    }
-    let network = if let Some(net) = unsafe { darea.data::<Network>("network") } {
-        let net: &mut Network = unsafe { &mut *net.as_ptr() };
-        net
+    let tasks_ctx = if let Some(ctx) = unsafe { darea.data::<TaskContext>("tasks_ctx") } {
+        let ctx: &mut TaskContext = unsafe { &mut *ctx.as_ptr() };
+        ctx
     } else {
-        term.feed(b"No network set");
+        term.feed(b"No Task Context Set; shouldn't happen; contact developers");
         return;
     };
-    let script = match nadi_core::parser::functions::parse_script_complete(&line) {
-        Ok(t) => t,
-        Err(e) => {
-            term.feed(format!("Error: {e:?}").as_bytes());
-            return;
-        }
-    };
-
     // temp solution, make NadiFunctions take a std::io::Write or
     // other trait object that can either print to stdout, or take the
     // result to show somewhere else (like here)
     let mut buf = gag::BufferRedirect::stdout().unwrap();
     let mut output = String::new();
-    for fc in &script {
-        term.feed(format!("#> {}\r\n", fc.to_colored_string()).as_bytes());
-        let res = funcs.execute(fc, network);
+    
+    for fc in tasks {
+        let res = tasks_ctx.execute(fc);
         // print the stdout output to the terminal
         buf.read_to_string(&mut output).unwrap();
         term.feed(output.replace("\n", "\r\n").as_bytes());
         output.clear();
-        if let Err(e) = res {
-            term.feed(format!("Error: {e}").as_bytes());
-            return;
-        }
+	match res {
+	    Ok(Some(p)) => term.feed(p.replace("\n", "\r\n").as_bytes()),
+	    Err(p) => {
+		term.feed(p.replace("\n", "\r\n").as_bytes());
+		break;
+	    },
+	    _ => (),
+	}
     }
 }
 
