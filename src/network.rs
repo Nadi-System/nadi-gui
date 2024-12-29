@@ -2,11 +2,23 @@ use abi_stable::std_types::{RSome, RString};
 use cairo::Context;
 use gdk::Rectangle;
 use nadi_core::prelude::*;
+use nadi_core::table::{Table,ColumnAlign};
 use vte4::prelude::*;
 
 // TODO make it better later
 
 pub fn calc_hw(net: &Network, ctx: &Context) -> (i32, i32) {
+    match net.attr("drawtable") {
+	Some(t) => match Table::from_attr(t) {
+	    Some(t) => return calc_table_hw(net, &t, ctx).unwrap_or((100, 100)),
+	    _ => ()
+	}
+	_ => (),
+    }
+    calc_net_hw(net, ctx)
+}
+
+pub fn calc_net_hw(net: &Network, ctx: &Context) -> (i32, i32) {
     ctx.set_font_size(14.0);
     let offx = 10.0;
     let offy = 10.0;
@@ -34,8 +46,6 @@ pub fn calc_hw(net: &Network, ctx: &Context) -> (i32, i32) {
     (h, w)
 }
 
-// works for cairo context in drawing area, not for svg export, the
-// coordinates are off: needs more investigation
 pub fn draw_network(
     net: &Network,
     ctx: &Context,
@@ -46,12 +56,34 @@ pub fn draw_network(
     if net.nodes_count() == 0 {
 	return;
     }
+    match net.attr("drawtable") {
+	Some(t) => match Table::try_from_attr(t) {
+	    Ok(t) => {
+		let _ = draw_network_table(net, &t, ctx, w, h, darea);
+		return;
+	    },
+	    Err(e) => {
+		println!("{e:?}");
+	    }
+	}
+	_ => (),
+    }
+    draw_network_only(net, ctx, w, h, darea)
+}
+pub fn draw_network_only(
+    net: &Network,
+    ctx: &Context,
+    w: i32,
+    h: i32,
+    darea: Option<&gtk::DrawingArea>,
+) {
     ctx.set_source_rgb(0.0, 0.0, 1.0);
     ctx.set_font_size(14.0);
     let offx = 10.0;
     let offy = 10.0;
     let dely = 20.0;
     let delx = 40.0;
+    let n = net.nodes_count();
     let mut top = h as f64 - offy;
     let mut left = offx;
     let max_lev = net
@@ -109,6 +141,190 @@ pub fn draw_network(
         let label = get_node_label(&n);
         _ = ctx.show_text(&label);
     }
+}
+
+pub fn calc_table_hw(net: &Network, table: &Table, ctx: &Context) -> anyhow::Result<(i32, i32)> {
+    ctx.set_font_size(14.0);
+    let headers: Vec<&str> = table.columns.iter().map(|c| c.header.as_str()).collect();
+    let contents: Vec<Vec<String>> = table
+        .render_contents(&net, false)?
+        .into_iter()
+        .rev()
+        .collect();
+    let offx = 10.0;
+    let dely = 20.0;
+    let delx = 40.0;
+    let header_widths: Vec<f64> = headers
+        .iter()
+        .map(|cell| {
+            ctx.text_extents(cell)
+                .map(|et| et.width())
+                .unwrap_or_default()
+        })
+        .collect();
+    let contents_widths: Vec<Vec<f64>> = contents
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| {
+                    ctx.text_extents(cell)
+                        .map(|et| et.width())
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .collect();
+    let col_widths: Vec<f64> = header_widths
+        .iter()
+        .enumerate()
+        .map(|(i, &h)| contents_widths.iter().map(|row| row[i]).fold(h, f64::max))
+        .collect();
+    let twidth: f64 =
+        col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
+    let max_level = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
+    let mut width: f64 = delx * max_level as f64 + 2.0 * 5.0 + twidth + 2.0 * offx;
+    let mut height: f64 = dely * (net.nodes_count() + 2) as f64 + 2.0 * 5.0;
+    let w = width.ceil() as i32;
+    let h = height.ceil() as i32;
+    Ok((h, w))
+}
+
+pub fn draw_network_table(
+    net: &Network,
+    table: &Table,
+    ctx: &Context,
+    w: i32,
+    h: i32,
+    darea: Option<&gtk::DrawingArea>,
+) -> anyhow::Result<()> {
+    ctx.set_source_rgb(0.0, 0.0, 1.0);
+    ctx.set_font_size(14.0);
+    let headers: Vec<&str> = table.columns.iter().map(|c| c.header.as_str()).collect();
+    let contents: Vec<Vec<String>> = table
+        .render_contents(&net, false)?
+        .into_iter()
+        .rev()
+        .collect();
+        let header_widths: Vec<f64> = headers
+        .iter()
+        .map(|cell| {
+            ctx.text_extents(cell)
+                .map(|et| et.width())
+                .unwrap_or_default()
+        })
+        .collect();
+    let contents_widths: Vec<Vec<f64>> = contents
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| {
+                    ctx.text_extents(cell)
+                        .map(|et| et.width())
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .collect();
+    let alignments: Vec<&ColumnAlign> = table.columns.iter().map(|c| &c.align).collect();
+    let max_level = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
+
+    let col_widths: Vec<f64> = header_widths
+        .iter()
+        .enumerate()
+        .map(|(i, &h)| contents_widths.iter().map(|row| row[i]).fold(h, f64::max))
+        .collect();
+    let offx = 10.0;
+    let dely = 20.0;
+    let delx = 40.0;
+    let mut height = h as f64;
+    let width = w as f64;
+    let twidth: f64 =
+        col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
+    let req_width = delx * max_level as f64 + 2.0 * 5.0 + twidth;
+    let req_ht: f64 = dely * (net.nodes_count() + 2) as f64 + 2.0 * 5.0;
+    let offset = (width - req_width) / 2.0;
+    let txtstart = offset + delx * max_level as f64 + 2.0 * 5.0;
+    let offset_y = (height - req_ht) / 2.0;
+    height -= offset_y;
+    let col_stops: Vec<f64> = (0..(col_widths.len()))
+        .map(|i| col_widths[0..i].iter().sum::<f64>() + offx * (i + 1) as f64 + txtstart)
+        .collect();
+    for (i, (head, a)) in headers.iter().zip(&alignments).enumerate() {
+        let stop = match a {
+            ColumnAlign::Left => col_stops[i],
+            ColumnAlign::Right => col_stops[i] + col_widths[i] - header_widths[i],
+            ColumnAlign::Center => col_stops[i] + (col_widths[i] - header_widths[i]) / 2.0,
+        };
+        ctx.move_to(stop, offset_y + dely);
+        ctx.show_text(head)?;
+    }
+    ctx.move_to(offset, offset_y + dely * 1.5);
+    ctx.line_to(txtstart + twidth, offset_y + dely * 1.5);
+    ctx.stroke()?;
+    net.nodes_rev()
+        .zip(contents)
+        .zip(contents_widths)
+        .try_for_each(|((n, row), row_widths)| -> cairo::Result<()> {
+            let n = n.lock();
+            let y = height - (n.index() + 1) as f64 * dely;
+            let x = offset + n.level() as f64 * delx + offx / 2.0;
+
+            if let RSome(o) = n.output() {
+		let (r, g, b) = get_line_color(&n);
+		ctx.set_source_rgb(r, g, b);
+                let o = o.lock();
+                let yo = height - (o.index() + 1) as f64 * dely;
+                let xo = offset + o.level() as f64 * delx + offx / 2.0;
+                let dx = xo - x;
+                let dy = yo - y;
+                let l = (dx.powi(2) + dy.powi(2)).sqrt();
+                let (ux, uy) = (dx / l, dy / l);
+                let (sx, sy) = (x + ux * 5.0 * 1.4, y + uy * 5.0 * 1.4);
+                let (ex, ey) = (xo - ux * 5.0 * 1.4, yo - uy * 5.0 * 1.4);
+                ctx.move_to(sx, sy);
+                ctx.line_to(ex, ey);
+                ctx.stroke()?;
+                let (asx, asy) = (ex - ux * 5.0, ey - uy * 5.0);
+                let (aex, aey) = (xo - ux * 5.0, yo - uy * 5.0);
+                ctx.move_to(
+                    asx + uy * 5.0 * 0.5,
+                    asy - ux * 5.0 * 0.5,
+                );
+                ctx.line_to(aex, aey);
+                ctx.line_to(
+                    asx - uy * 5.0 * 0.5,
+                    asy + ux * 5.0 * 0.5,
+                );
+                ctx.line_to(asx + ux, asy + uy);
+                ctx.fill()?;
+                ctx.stroke()?;
+            }
+	    // if highlight.contains(&n.index()){
+	    // 	ctx.set_source_rgb(0.6, 0.35, 0.35);
+	    // } else {
+	    // 	ctx.set_source_rgb(0.35, 0.35, 0.6);
+	    // }
+            let (r, g, b) = get_node_color(&n);
+            ctx.set_source_rgb(r, g, b);
+            ctx.move_to(x + 5.0, y);
+            ctx.arc(x, y, 5.0, 0.0, 2.0 * 3.1416);
+            ctx.fill()?;
+            ctx.stroke()?;
+
+            let (r, g, b) = get_text_color(&n);
+            ctx.set_source_rgb(r, g, b);
+            for (i, (cell, a)) in row.iter().zip(&alignments).enumerate() {
+                let stop = match a {
+                    ColumnAlign::Left => col_stops[i],
+                    ColumnAlign::Right => col_stops[i] + col_widths[i] - row_widths[i],
+                    ColumnAlign::Center => col_stops[i] + (col_widths[i] - row_widths[i]) / 2.0,
+                };
+                ctx.move_to(stop, y);
+                ctx.show_text(cell)?;
+            }
+            Ok(())
+        })?;
+    Ok(())
 }
 
 fn get_node_color(node: &NodeInner) -> (f64, f64, f64) {

@@ -243,8 +243,9 @@ impl Window {
     pub fn export_file(&self, file: &gtk::gio::File) {
         let filename = file.path().expect("Couldn't get file path");
         let name = filename.to_string_lossy().to_string();
-        if let Some(net) = unsafe { self.imp().da_network.data::<Network>("network") } {
-            let net: &Network = unsafe { &*net.as_ptr() };
+	if let Some(tctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
+            let tctx: &mut TaskContext = unsafe { &mut *tctx.as_ptr() };
+            let net: &Network = &tctx.network;
             let mut svg = cairo::SvgSurface::new::<&str>(400.0, 500.0, None).unwrap();
             let ctx = cairo::Context::new(&mut svg).unwrap();
             let (mut h, mut w) = network::calc_hw(net, &ctx);

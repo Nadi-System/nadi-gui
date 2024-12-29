@@ -17,3 +17,6 @@ node["willow-island",racine,mcalpine,smithland]
  set_attrs(textcolor=[1.0, 0.0, 0.0], nodecolor=[1.0, 0.0, 0.0])
 # todo: make the `node[athens].nodelabel = "Something"` syntax work
 node[smithland].nodelabel="Smithland (Outlet)"
+
+network.drawtable = ["<Name => {_NAME}", ["Order", "right", "{ORDER}"],
+	{header="test", align="right", template="{LEVEL:calc(+1)}"}]
