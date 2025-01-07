@@ -22,6 +22,8 @@ pub struct Window {
     #[template_child]
     pub btn_run: TemplateChild<gtk::Button>,
     #[template_child]
+    pub btn_comment: TemplateChild<gtk::Button>,
+    #[template_child]
     pub btn_export: TemplateChild<gtk::Button>,
     #[template_child]
     pub term_main: TemplateChild<vte4::Terminal>,

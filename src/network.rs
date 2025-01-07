@@ -1,19 +1,26 @@
-use abi_stable::std_types::{RSome, RString};
+use super::colors::AttrColor;
+use abi_stable::std_types::RSome;
 use cairo::Context;
 use gdk::Rectangle;
 use nadi_core::prelude::*;
-use nadi_core::table::{Table,ColumnAlign};
+use nadi_core::table::{ColumnAlign, Table};
 use vte4::prelude::*;
 
 // TODO make it better later
 
+const NODE_COLOR: &str = "nodecolor";
+const LINE_COLOR: &str = "linecolor";
+const TEXT_COLOR: &str = "textcolor";
+const LINE_WIDTH: &str = "linewidth";
+const DEFAULT_LINE_WIDTH: f64 = 1.0;
+
 pub fn calc_hw(net: &Network, ctx: &Context) -> (i32, i32) {
     match net.attr("drawtable") {
-	Some(t) => match Table::from_attr(t) {
-	    Some(t) => return calc_table_hw(net, &t, ctx).unwrap_or((100, 100)),
-	    _ => ()
-	}
-	_ => (),
+        Some(t) => match Table::from_attr(t) {
+            Some(t) => return calc_table_hw(net, &t, ctx).unwrap_or((100, 100)),
+            _ => (),
+        },
+        _ => (),
     }
     calc_net_hw(net, ctx)
 }
@@ -24,14 +31,14 @@ pub fn calc_net_hw(net: &Network, ctx: &Context) -> (i32, i32) {
     let offy = 10.0;
     let dely = 20.0;
     let delx = 40.0;
-    let mut left = offx;
+    let left = offx;
     let max_lev = net
         .nodes()
         .map(|n| n.lock().level())
         .max()
         .unwrap_or_default();
 
-    let mut text_start = left + delx * max_lev as f64 + offx;
+    let text_start = left + delx * max_lev as f64 + offx;
     let max_text = net
         .nodes()
         .map(|n| {
@@ -54,19 +61,19 @@ pub fn draw_network(
     darea: Option<&gtk::DrawingArea>,
 ) {
     if net.nodes_count() == 0 {
-	return;
+        return;
     }
     match net.attr("drawtable") {
-	Some(t) => match Table::try_from_attr(t) {
-	    Ok(t) => {
-		let _ = draw_network_table(net, &t, ctx, w, h, darea);
-		return;
-	    },
-	    Err(e) => {
-		println!("{e:?}");
-	    }
-	}
-	_ => (),
+        Some(t) => match Table::try_from_attr(t) {
+            Ok(t) => {
+                let _ = draw_network_table(net, &t, ctx, w, h, darea);
+                return;
+            }
+            Err(e) => {
+                println!("{e:?}");
+            }
+        },
+        _ => (),
     }
     draw_network_only(net, ctx, w, h, darea)
 }
@@ -83,7 +90,6 @@ pub fn draw_network_only(
     let offy = 10.0;
     let dely = 20.0;
     let delx = 40.0;
-    let n = net.nodes_count();
     let mut top = h as f64 - offy;
     let mut left = offx;
     let max_lev = net
@@ -116,8 +122,7 @@ pub fn draw_network_only(
     ctx.move_to(offx, offy);
     for n in net.nodes() {
         let n = n.lock();
-        let (r, g, b) = get_node_color(&n);
-        ctx.set_source_rgb(r, g, b);
+        set_node_color(&n, ctx, NODE_COLOR);
         let nx = left + delx * n.level() as f64;
         let ny = top - dely * n.index() as f64;
         ctx.move_to(nx, ny);
@@ -127,8 +132,8 @@ pub fn draw_network_only(
         if let RSome(o) = n.output() {
             let o = o.lock();
             ctx.move_to(nx, ny);
-            let (r, g, b) = get_line_color(&n);
-            ctx.set_source_rgb(r, g, b);
+            set_node_color(&n, ctx, LINE_COLOR);
+            set_line_width(&n, ctx, LINE_WIDTH);
             ctx.line_to(
                 left + delx * o.level() as f64,
                 top - dely * o.index() as f64,
@@ -136,8 +141,7 @@ pub fn draw_network_only(
             _ = ctx.stroke();
         }
         ctx.move_to(text_start, ny);
-        let (r, g, b) = get_text_color(&n);
-        ctx.set_source_rgb(r, g, b);
+        set_node_color(&n, ctx, TEXT_COLOR);
         let label = get_node_label(&n);
         _ = ctx.show_text(&label);
     }
@@ -179,11 +183,10 @@ pub fn calc_table_hw(net: &Network, table: &Table, ctx: &Context) -> anyhow::Res
         .enumerate()
         .map(|(i, &h)| contents_widths.iter().map(|row| row[i]).fold(h, f64::max))
         .collect();
-    let twidth: f64 =
-        col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
+    let twidth: f64 = col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
     let max_level = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
-    let mut width: f64 = delx * max_level as f64 + 2.0 * 5.0 + twidth + 2.0 * offx;
-    let mut height: f64 = dely * (net.nodes_count() + 2) as f64 + 2.0 * 5.0;
+    let width: f64 = delx * max_level as f64 + 2.0 * 5.0 + twidth + 2.0 * offx;
+    let height: f64 = dely * (net.nodes_count() + 2) as f64 + 2.0 * 5.0;
     let w = width.ceil() as i32;
     let h = height.ceil() as i32;
     Ok((h, w))
@@ -195,7 +198,7 @@ pub fn draw_network_table(
     ctx: &Context,
     w: i32,
     h: i32,
-    darea: Option<&gtk::DrawingArea>,
+    _darea: Option<&gtk::DrawingArea>,
 ) -> anyhow::Result<()> {
     ctx.set_source_rgb(0.0, 0.0, 1.0);
     ctx.set_font_size(14.0);
@@ -205,7 +208,7 @@ pub fn draw_network_table(
         .into_iter()
         .rev()
         .collect();
-        let header_widths: Vec<f64> = headers
+    let header_widths: Vec<f64> = headers
         .iter()
         .map(|cell| {
             ctx.text_extents(cell)
@@ -238,8 +241,7 @@ pub fn draw_network_table(
     let delx = 40.0;
     let mut height = h as f64;
     let width = w as f64;
-    let twidth: f64 =
-        col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
+    let twidth: f64 = col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
     let req_width = delx * max_level as f64 + 2.0 * 5.0 + twidth;
     let req_ht: f64 = dely * (net.nodes_count() + 2) as f64 + 2.0 * 5.0;
     let offset = (width - req_width) / 2.0;
@@ -270,8 +272,7 @@ pub fn draw_network_table(
             let x = offset + n.level() as f64 * delx + offx / 2.0;
 
             if let RSome(o) = n.output() {
-		let (r, g, b) = get_line_color(&n);
-		ctx.set_source_rgb(r, g, b);
+                set_node_color(&n, ctx, LINE_COLOR);
                 let o = o.lock();
                 let yo = height - (o.index() + 1) as f64 * dely;
                 let xo = offset + o.level() as f64 * delx + offx / 2.0;
@@ -281,38 +282,32 @@ pub fn draw_network_table(
                 let (ux, uy) = (dx / l, dy / l);
                 let (sx, sy) = (x + ux * 5.0 * 1.4, y + uy * 5.0 * 1.4);
                 let (ex, ey) = (xo - ux * 5.0 * 1.4, yo - uy * 5.0 * 1.4);
+                set_line_width(&n, ctx, LINE_WIDTH);
                 ctx.move_to(sx, sy);
                 ctx.line_to(ex, ey);
                 ctx.stroke()?;
                 let (asx, asy) = (ex - ux * 5.0, ey - uy * 5.0);
                 let (aex, aey) = (xo - ux * 5.0, yo - uy * 5.0);
-                ctx.move_to(
-                    asx + uy * 5.0 * 0.5,
-                    asy - ux * 5.0 * 0.5,
-                );
+                ctx.set_line_width(DEFAULT_LINE_WIDTH);
+                ctx.move_to(asx + uy * 5.0 * 0.5, asy - ux * 5.0 * 0.5);
                 ctx.line_to(aex, aey);
-                ctx.line_to(
-                    asx - uy * 5.0 * 0.5,
-                    asy + ux * 5.0 * 0.5,
-                );
+                ctx.line_to(asx - uy * 5.0 * 0.5, asy + ux * 5.0 * 0.5);
                 ctx.line_to(asx + ux, asy + uy);
                 ctx.fill()?;
                 ctx.stroke()?;
             }
-	    // if highlight.contains(&n.index()){
-	    // 	ctx.set_source_rgb(0.6, 0.35, 0.35);
-	    // } else {
-	    // 	ctx.set_source_rgb(0.35, 0.35, 0.6);
-	    // }
-            let (r, g, b) = get_node_color(&n);
-            ctx.set_source_rgb(r, g, b);
+            // if highlight.contains(&n.index()){
+            // 	ctx.set_source_rgb(0.6, 0.35, 0.35);
+            // } else {
+            // 	ctx.set_source_rgb(0.35, 0.35, 0.6);
+            // }
+            set_node_color(&n, ctx, NODE_COLOR);
             ctx.move_to(x + 5.0, y);
             ctx.arc(x, y, 5.0, 0.0, 2.0 * 3.1416);
             ctx.fill()?;
             ctx.stroke()?;
 
-            let (r, g, b) = get_text_color(&n);
-            ctx.set_source_rgb(r, g, b);
+            set_node_color(&n, ctx, TEXT_COLOR);
             for (i, (cell, a)) in row.iter().zip(&alignments).enumerate() {
                 let stop = match a {
                     ColumnAlign::Left => col_stops[i],
@@ -327,9 +322,21 @@ pub fn draw_network_table(
     Ok(())
 }
 
-fn get_node_color(node: &NodeInner) -> (f64, f64, f64) {
-    node.try_attr::<(f64, f64, f64)>("nodecolor")
-        .unwrap_or((0.0, 0.0, 0.0))
+fn set_node_color(node: &NodeInner, ctx: &cairo::Context, attr: &str) {
+    let c = node.try_attr::<AttrColor>(attr).unwrap_or_default();
+    match c.color() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            crate::colors::Color::default()
+        }
+    }
+    .set(ctx);
+}
+
+fn set_line_width(node: &NodeInner, ctx: &cairo::Context, attr: &str) {
+    let w = node.try_attr::<f64>(attr).unwrap_or(DEFAULT_LINE_WIDTH);
+    ctx.set_line_width(w)
 }
 
 fn get_node_label(node: &NodeInner) -> String {
@@ -342,14 +349,4 @@ fn get_node_label(node: &NodeInner) -> String {
         }
     }
     l
-}
-
-fn get_line_color(node: &NodeInner) -> (f64, f64, f64) {
-    node.try_attr::<(f64, f64, f64)>("linecolor")
-        .unwrap_or((0.0, 0.0, 0.0))
-}
-
-fn get_text_color(node: &NodeInner) -> (f64, f64, f64) {
-    node.try_attr::<(f64, f64, f64)>("textcolor")
-        .unwrap_or((0.0, 0.0, 0.0))
 }

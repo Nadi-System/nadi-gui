@@ -24,7 +24,7 @@
 	<child type="tag">
 	  <object class="GtkTextTag">
 	    <property name="name">bool</property>
-	    <property name="foreground-rgba">rgba(50,50,150,1)</property>
+	    <property name="foreground-rgba">rgba(150,150,250,1)</property>
 	  </object>
 	</child>
 	<child type="tag">
@@ -156,6 +156,13 @@
 			<property name="label">Save</property>
 			<property name="icon-name">document-save</property>
 			<property name="tooltip-text">Save the Buffer to File</property>
+		      </object>
+		    </child>
+		    <child>
+		      <object class="GtkButton" id="btn_comment">
+			<property name="label">Comment</property>
+			<property name="icon-name">comment</property>
+			<property name="tooltip-text">Comment/Uncomment Selection or the whole Buffer</property>
 		      </object>
 		    </child>
 		    <child>

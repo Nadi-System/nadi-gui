@@ -1,17 +1,15 @@
 mod imp;
 use super::network;
-use abi_stable::std_types::{RSome, RString};
 use colored::Colorize;
-use gdk::Rectangle;
 use gio::ActionEntry;
 use glib::{clone, Object};
-use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use gtk::{gio, glib, Application};
+use gtk::{gio, glib, Application, TextBuffer};
+use gtk::{prelude::*, TextIter};
 use itertools::Itertools;
-use nadi_core::{tasks::TaskContext, functions::NadiFunctions, network::Network, node::NodeInner};
-use nadi_core::parser::tokenizer::TaskToken;
+use nadi_core::parser::tokenizer::{TaskToken, Token};
 use nadi_core::parser::NadiError;
+use nadi_core::{functions::NadiFunctions, network::Network, tasks::TaskContext};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::Iterator;
@@ -32,7 +30,9 @@ impl Window {
 
     fn setup_data(&self) {
         unsafe {
-            self.imp().da_network.set_data("tasks_ctx", TaskContext::new(None));
+            self.imp()
+                .da_network
+                .set_data("tasks_ctx", TaskContext::new(None));
         }
     }
 
@@ -74,24 +74,38 @@ impl Window {
         self.imp().btn_save.connect_clicked(clone!(
             #[weak(rename_to=window)]
             self,
-            move |_| { window.save_file().unwrap() }
+            move |_| window.save_file().unwrap()
         ));
 
         self.imp().btn_export.connect_clicked(clone!(
             #[weak(rename_to=window)]
             self,
-            move |_| { window.export() }
+            move |_| window.export()
         ));
 
-        self.imp()
-            .tv_frame
-            .buffer()
-            .connect_changed(clone!(@weak self as window => move |_| {
-            let tb = window.imp().tv_frame.buffer();
-		// todo, only do this for current line
-		tb.remove_all_tags(&tb.start_iter(), &tb.end_iter());
+        // self.imp().tv_frame.connect_show(clone!(
+        //     #[weak(rename_to=window)]
+        //     self,
+        //     move |_| window.export()
+        // ));
+
+        // self.imp().tv_frame.connect_insert_at_cursor(move |tv, s| {
+        //     println!("HEre {s}");
+        //     if s == "0" {
+        //         tv.buffer().insert_at_cursor(s);
+        //     }
+        // });
+
+        self.imp().tv_frame.buffer().connect_changed(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| {
+                let tb = window.imp().tv_frame.buffer();
+                // todo, only do this for current line
+                tb.remove_all_tags(&tb.start_iter(), &tb.end_iter());
                 window.format_task(&tb);
-            }));
+            }
+        ));
 
         self.imp().btn_run.connect_clicked(clone!(
             #[weak(rename_to=window)]
@@ -106,44 +120,74 @@ impl Window {
                     ins = buf.end_iter();
                 }
                 let selection = buf.text(&ins, &mark, true);
-                run_task(tm, &window.imp().da_network, format!("{}\n", selection.trim()));
+                run_task(
+                    tm,
+                    &window.imp().da_network,
+                    format!("{}\n", selection.trim()),
+                );
                 term_prompt(&tm);
                 // since the task could have changed the network properties
                 window.imp().da_network.queue_draw();
             }
         ));
+
+        self.imp().btn_comment.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| {
+                let buf = window.imp().tv_frame.buffer();
+                let mut mark = buf.iter_at_mark(&buf.selection_bound());
+                let mut ins = buf.iter_at_mark(&buf.get_insert());
+                if mark == ins {
+                    mark = buf.start_iter();
+                    ins = buf.end_iter();
+                }
+                let selection = buf.text(&ins, &mark, true);
+                let iscomment = selection
+                    .lines()
+                    .map(|l| l.trim())
+                    .all(|l| l.is_empty() || l.starts_with('#'));
+                let mut newlines = String::new();
+                if iscomment {
+                    for l in selection.lines() {
+                        if !l.trim().is_empty() {
+                            let (x, y) = l.split_once('#').expect("should have #");
+                            newlines.push_str(x);
+                            if y.starts_with(' ') {
+                                newlines.push_str(&y[1..]);
+                            } else {
+                                newlines.push_str(y);
+                            }
+                        }
+                        newlines.push('\n');
+                    }
+                } else {
+                    for l in selection.lines() {
+                        if !l.trim().is_empty() {
+                            newlines.push('#');
+                            newlines.push(' ');
+                            newlines.push_str(l);
+                        }
+                        newlines.push('\n');
+                    }
+                }
+                if !selection.ends_with('\n') {
+                    // remove the extra '\n' is not in selection as
+                    // lines() ignores the last '\n'
+                    newlines.pop();
+                }
+                buf.delete(&mut mark, &mut ins);
+                buf.insert(&mut mark, &newlines);
+                let mut prev = mark;
+                prev.backward_chars(newlines.chars().count() as i32);
+                buf.select_range(&prev, &mark);
+            }
+        ));
     }
 
     fn format_task(&self, tb: &gtk::TextBuffer) {
-	let mut point = tb.start_iter();
-	let text = tb.text(&point, &tb.end_iter(), true);
-	for line in text.lines() {
-	    let mut l = point;
-	    l.forward_line();
-	    if let Ok(tags) = nadi_core::parser::tokenizer::get_tokens(line){
-		for t in tags {
-		    let st = point;
-		    point.forward_chars(t.content.len() as i32);
-		    let tg = match t.ty {
-			TaskToken::Comment => "comment",
-			TaskToken::Keyword(_) => "keyword",
-			TaskToken::Function  => "function",
-			TaskToken::Variable => "variable",
-			TaskToken::String(_) => "string",
-			TaskToken::Integer | TaskToken::Float => "number",
-			TaskToken::Date | TaskToken::Time | TaskToken::DateTime => "datetime",
-			TaskToken::NewLine | TaskToken::WhiteSpace => continue,
-			TaskToken::PathSep => "pathsep",
-			TaskToken::Assignment => "equal",
-			_ => continue,
-		    };
-		    tb.apply_tag_by_name(tg, &st, &point);
-		}
-	    } else {
-		tb.apply_tag_by_name("error", &point, &l);
-	    }
-	    point = l;
-	}
+        let mut point = tb.start_iter();
+        apply_tags(&mut point, tb)
     }
 
     pub fn open(&self) {
@@ -199,22 +243,12 @@ impl Window {
         let txt = buf
             .text(&buf.start_iter(), &buf.end_iter(), true)
             .to_string();
-	let tm = &self.imp().term_main;
-	let mut tasks_ctx = TaskContext::new(None);
-	// for fc in tasks {
-        //     match tasks_ctx.execute(fc) {
-	// 	Ok(Some(p)) => tm.feed(p.replace("\n", "\r\n").as_bytes()),
-	// 	Err(p) => {
-	// 	    tm.feed(p.replace("\n", "\r\n").as_bytes());
-	// 	    break;
-	// 	},
-	// 	_ => (),
-	//     }
-	// }
+        let tm = &self.imp().term_main;
+        let tasks_ctx = TaskContext::new(None);
         unsafe {
             self.imp().da_network.set_data("tasks_ctx", tasks_ctx);
         }
-	run_task(tm, &self.imp().da_network, format!("{txt}\n"));
+        run_task(tm, &self.imp().da_network, format!("{txt}\n"));
         term_prompt(&tm);
         self.imp().da_network.queue_draw();
         Ok(())
@@ -243,7 +277,7 @@ impl Window {
     pub fn export_file(&self, file: &gtk::gio::File) {
         let filename = file.path().expect("Couldn't get file path");
         let name = filename.to_string_lossy().to_string();
-	if let Some(tctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
+        if let Some(tctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
             let tctx: &mut TaskContext = unsafe { &mut *tctx.as_ptr() };
             let net: &Network = &tctx.network;
             let mut svg = cairo::SvgSurface::new::<&str>(400.0, 500.0, None).unwrap();
@@ -264,8 +298,10 @@ impl Window {
                     network::draw_network(net, &ctx, w, h, None);
                 }
                 "png" => {
-                    let mut png = cairo::ImageSurface::create(cairo::Format::ARgb32, w, h).unwrap();
+                    let mut png =
+                        cairo::ImageSurface::create(cairo::Format::ARgb32, w * 10, h * 10).unwrap();
                     let ctx = cairo::Context::new(&mut png).unwrap();
+                    ctx.scale(10.0, 10.0);
                     network::draw_network(net, &ctx, w, h, None);
                     let mut f = File::create(name).unwrap();
                     png.write_to_png(&mut f).unwrap();
@@ -311,7 +347,7 @@ impl Window {
                             "clear" => tm.reset(true, false),
                             l => {
                                 tm.feed(b"\r\x1B[A");
-				term_prompt(&tm);
+                                term_prompt(&tm);
                                 run_task(tm, &da, format!("{}\n", l));
                                 // since the task could have changed the network properties
                                 da.queue_draw();
@@ -428,30 +464,29 @@ fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
 
 fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
     if line.trim() == "help" {
-	term.feed(b"TODO: Help \r\n");
+        term.feed(b"TODO: Help \r\n");
         return;
     }
     match nadi_core::parser::tokenizer::get_tokens(&line) {
-	Ok(tokens) => {
-	    for t in &tokens {
-		term.feed(t.colored().replace("\n", "\r\n").as_bytes());
-	    }
-	    term.feed("\r\n".as_bytes());
-	    match nadi_core::parser::tasks::parse(tokens) {
-		Ok(tasks) => {
-		    run_tasks(term, darea, tasks);
-		}
-		Err(e) => {
-		    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-		}
-	    }
-	},
-	Err(e) => {
-	    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-	}
+        Ok(tokens) => {
+            for t in &tokens {
+                term.feed(t.colored().replace("\n", "\r\n").as_bytes());
+            }
+            term.feed("\r\n".as_bytes());
+            match nadi_core::parser::tasks::parse(tokens) {
+                Ok(tasks) => {
+                    run_tasks(term, darea, tasks);
+                }
+                Err(e) => {
+                    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+                }
+            }
+        }
+        Err(e) => {
+            term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+        }
     }
 }
-
 
 fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_core::tasks::Task>) {
     let mut skin = termimad::MadSkin::default_dark();
@@ -470,29 +505,22 @@ fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_co
     // result to show somewhere else (like here)
     let mut buf = gag::BufferRedirect::stdout().unwrap();
     let mut output = String::new();
-    
+
     for fc in tasks {
         let res = tasks_ctx.execute(fc);
         // print the stdout output to the terminal
         buf.read_to_string(&mut output).unwrap();
         term.feed(output.replace("\n", "\r\n").as_bytes());
         output.clear();
-	match res {
-	    Ok(Some(p)) => term.feed(p.replace("\n", "\r\n").as_bytes()),
-	    Err(p) => {
-		term.feed(p.replace("\n", "\r\n").as_bytes());
-		break;
-	    },
-	    _ => (),
-	}
+        match res {
+            Ok(Some(p)) => term.feed(p.replace("\n", "\r\n").as_bytes()),
+            Err(p) => {
+                term.feed(p.replace("\n", "\r\n").as_bytes());
+                break;
+            }
+            _ => (),
+        }
     }
-}
-
-fn push_func_help(skin: &termimad::MadSkin, term: &vte4::Terminal, signature: String, help: &str) {
-    term.feed(signature.as_bytes());
-    let txt = skin.text(help, Some(term.width() as usize));
-    term.feed(txt.to_string().replace("\n", "\r\n").as_bytes());
-    term.feed("\r\n".as_bytes());
 }
 
 fn term_prompt(tm: &vte4::Terminal) {
@@ -540,4 +568,51 @@ fn common_prefix<'a>(strs: &'a [&str]) -> &'a str {
         }
     }
     &strs[0][0..pre]
+}
+
+fn apply_tags(point: &mut TextIter, tb: &TextBuffer) {
+    let text = tb.text(&point, &tb.end_iter(), true);
+    match nadi_core::parser::tokenizer::get_tokens(&text) {
+        Ok(tags) => apply_token_tags(point, tb, &tags),
+        Err(e) => {
+            // there is an error somewhere; so we skip that line
+            let valid = text.split("\n").take(e.line).join("\n");
+            match nadi_core::parser::tokenizer::get_tokens(&valid) {
+                Ok(tags) => apply_token_tags(point, tb, &tags),
+                Err(_e) => {
+                    // This should never happen, but it happens when
+                    // there is problem with strings ""
+                    // println!("{}", e.user_msg(None));
+                    // panic!("Should have been valid");
+                    return;
+                }
+            }
+            let l = *point;
+            point.forward_line();
+            tb.apply_tag_by_name("error", &l, &point);
+            apply_tags(point, tb);
+        }
+    }
+}
+
+fn apply_token_tags(point: &mut TextIter, tb: &TextBuffer, tokens: &[Token]) {
+    for t in tokens {
+        let st = *point;
+        point.forward_chars(t.content.chars().count() as i32);
+        let tg = match t.ty {
+            TaskToken::Comment => "comment",
+            TaskToken::Keyword(_) => "keyword",
+            TaskToken::Function => "function",
+            TaskToken::Variable => "variable",
+            TaskToken::Bool => "bool",
+            TaskToken::String(_) => "string",
+            TaskToken::Integer | TaskToken::Float => "number",
+            TaskToken::Date | TaskToken::Time | TaskToken::DateTime => "datetime",
+            TaskToken::NewLine | TaskToken::WhiteSpace => continue,
+            TaskToken::PathSep => "pathsep",
+            TaskToken::Assignment => "equal",
+            _ => continue,
+        };
+        tb.apply_tag_by_name(tg, &st, &point);
+    }
 }
