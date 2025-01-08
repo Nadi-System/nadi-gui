@@ -83,18 +83,50 @@ impl Window {
             move |_| window.export()
         ));
 
-        // self.imp().tv_frame.connect_show(clone!(
+        // // The cursor position notify handles this as well
+        // self.imp().tv_frame.connect_move_cursor(clone!(
         //     #[weak(rename_to=window)]
         //     self,
-        //     move |_| window.export()
+        //     move |tv, ms, step, _| {
+        //         let buf = tv.buffer();
+        //         let mut mark = buf.iter_at_mark(&buf.get_insert());
+        //         // since this event seems to trigger before the cursor
+        //         // is moved: simulating the movement
+        //         match ms {
+        //             gtk::MovementStep::DisplayLines => {
+        //                 mark.forward_lines(step);
+        //             }
+        //             gtk::MovementStep::VisualPositions => {
+        //                 mark.forward_chars(step);
+        //             }
+        //             gtk::MovementStep::Words => {
+        //                 mark.forward_word_ends(step);
+        //             }
+        //             _ => (),
+        //         }
+        //         window.display_signature(mark);
+        //     }
         // ));
 
-        // self.imp().tv_frame.connect_insert_at_cursor(move |tv, s| {
-        //     println!("HEre {s}");
-        //     if s == "0" {
-        //         tv.buffer().insert_at_cursor(s);
-        //     }
-        // });
+        self.imp()
+            .tv_frame
+            .buffer()
+            .connect_cursor_position_notify(clone!(
+                #[weak(rename_to=window)]
+                self,
+                move |buf| {
+                    // let buf = window.imp().tv_frame.buffer();
+                    let mark = buf.iter_at_mark(&buf.get_insert());
+                    window.display_signature(mark);
+                }
+            ));
+
+        self.imp().tv_frame.connect_insert_at_cursor(move |tv, s| {
+            println!("Inserted {s}");
+            if s == "0" {
+                tv.buffer().insert_at_cursor(s);
+            }
+        });
 
         self.imp().tv_frame.buffer().connect_changed(clone!(
             #[weak(rename_to=window)]
@@ -103,6 +135,7 @@ impl Window {
                 let tb = window.imp().tv_frame.buffer();
                 // todo, only do this for current line
                 tb.remove_all_tags(&tb.start_iter(), &tb.end_iter());
+                window.refresh_signature();
                 window.format_task(&tb);
             }
         ));
@@ -181,8 +214,73 @@ impl Window {
                 let mut prev = mark;
                 prev.backward_chars(newlines.chars().count() as i32);
                 buf.select_range(&prev, &mark);
+                window.refresh_signature();
             }
         ));
+    }
+
+    fn refresh_signature(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let mark = buf.iter_at_mark(&buf.get_insert());
+        self.display_signature(mark);
+    }
+
+    fn display_signature(&self, mark: TextIter) {
+        let buf = self.imp().tv_frame.buffer();
+        let line = buf
+            .text(&buf.start_iter(), &mark, false)
+            .split('\n')
+            .count()
+            - 1;
+        let mut end = buf.iter_at_line(line as i32).expect("should be valid line");
+        let start = end;
+        end.forward_line();
+        let line = buf.text(&start, &end, false);
+        match nadi_core::parser::tokenizer::get_tokens(&line) {
+            Ok(tags) => {
+                if let Some(t) = tags
+                    .into_iter()
+                    .filter(|t| t.ty == TaskToken::Function)
+                    .next()
+                {
+                    let tasks_ctx = if let Some(ctx) =
+                        unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") }
+                    {
+                        let ctx: &mut TaskContext = unsafe { &mut *ctx.as_ptr() };
+                        ctx
+                    } else {
+                        return;
+                    };
+                    let func = if line.trim().starts_with("node") {
+                        tasks_ctx
+                            .functions
+                            .node(&t.content)
+                            .map(|f| (f.signature(), f.short_help()))
+                    } else if line.trim().starts_with("net") {
+                        tasks_ctx
+                            .functions
+                            .network(&t.content)
+                            .map(|f| (f.signature(), f.short_help()))
+                    } else {
+                        tasks_ctx
+                            .functions
+                            .network(&t.content)
+                            .map(|f| (f.signature(), f.short_help()))
+                            .or_else(|| {
+                                tasks_ctx
+                                    .functions
+                                    .node(&t.content)
+                                    .map(|f| (f.signature(), f.short_help()))
+                            })
+                    };
+                    if let Some((sig, help)) = func {
+                        let sig = format!("<span foreground=\"purple\">{}</span><span foreground=\"gray\">{}</span>\n<span foreground=\"yellow\" size=\"small\">{}</span>", &t.content, sig.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), help);
+                        self.imp().lab_signature.set_markup(&sig);
+                    }
+                }
+            }
+            Err(_) => (),
+        }
     }
 
     fn format_task(&self, tb: &gtk::TextBuffer) {
@@ -212,6 +310,7 @@ impl Window {
                 }
             ),
         );
+        self.refresh_signature();
     }
 
     pub fn export(&self) {
@@ -262,7 +361,10 @@ impl Window {
             .to_string();
         let mut file = File::create(&name)?;
         file.write_all(txt.as_bytes())?;
-        self.reload_network()
+        if self.imp().btn_sync.is_active() {
+            self.reload_network()?
+        }
+        Ok(())
     }
 
     pub fn open_file(&self, file: &gtk::gio::File) -> anyhow::Result<()> {
@@ -271,6 +373,7 @@ impl Window {
         self.imp().txt_browse.set_text(&name);
         let txt = std::fs::read_to_string(&name)?;
         self.imp().tv_frame.buffer().set_text(&txt);
+        self.refresh_signature();
         self.reload_network()
     }
 

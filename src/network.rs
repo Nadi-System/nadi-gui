@@ -63,6 +63,11 @@ pub fn draw_network(
     if net.nodes_count() == 0 {
         return;
     }
+    if let Some(da) = darea {
+        let (h, w) = calc_hw(net, ctx);
+        da.set_height_request(h);
+        da.set_width_request(w);
+    }
     match net.attr("drawtable") {
         Some(t) => match Table::try_from_attr(t) {
             Ok(t) => {
@@ -155,9 +160,6 @@ pub fn calc_table_hw(net: &Network, table: &Table, ctx: &Context) -> anyhow::Res
         .into_iter()
         .rev()
         .collect();
-    let offx = 10.0;
-    let dely = 20.0;
-    let delx = 40.0;
     let header_widths: Vec<f64> = headers
         .iter()
         .map(|cell| {
@@ -183,6 +185,9 @@ pub fn calc_table_hw(net: &Network, table: &Table, ctx: &Context) -> anyhow::Res
         .enumerate()
         .map(|(i, &h)| contents_widths.iter().map(|row| row[i]).fold(h, f64::max))
         .collect();
+    let offx = 10.0;
+    let dely = 20.0;
+    let delx = 40.0;
     let twidth: f64 = col_widths.iter().sum::<f64>() + offx * (col_widths.len() + 1) as f64;
     let max_level = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
     let width: f64 = delx * max_level as f64 + 2.0 * 5.0 + twidth + 2.0 * offx;

@@ -5,5 +5,6 @@
     <file preprocess="xml-stripblanks">icons/run-code.svg</file>
     <file preprocess="xml-stripblanks">icons/export-image.svg</file>
     <file preprocess="xml-stripblanks">icons/comment.svg</file>
+    <file preprocess="xml-stripblanks">icons/sync.svg</file>
   </gresource>
 </gresources>
