@@ -9,7 +9,11 @@ use gtk::{prelude::*, TextIter};
 use itertools::Itertools;
 use nadi_core::parser::tokenizer::{TaskToken, Token};
 use nadi_core::parser::NadiError;
-use nadi_core::{functions::NadiFunctions, network::Network, tasks::TaskContext};
+use nadi_core::{
+    functions::{NadiFunctions, SignatureArg},
+    network::Network,
+    tasks::TaskContext,
+};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::Iterator;
@@ -255,26 +259,66 @@ impl Window {
                         tasks_ctx
                             .functions
                             .node(&t.content)
-                            .map(|f| (f.signature(), f.short_help()))
+                            .map(|f| (f.args(), f.short_help()))
                     } else if line.trim().starts_with("net") {
                         tasks_ctx
                             .functions
                             .network(&t.content)
-                            .map(|f| (f.signature(), f.short_help()))
+                            .map(|f| (f.args(), f.short_help()))
                     } else {
                         tasks_ctx
                             .functions
-                            .network(&t.content)
-                            .map(|f| (f.signature(), f.short_help()))
+                            .node(&t.content)
+                            .map(|f| (f.args(), f.short_help()))
                             .or_else(|| {
                                 tasks_ctx
                                     .functions
-                                    .node(&t.content)
-                                    .map(|f| (f.signature(), f.short_help()))
+                                    .network(&t.content)
+                                    .map(|f| (f.args(), f.short_help()))
                             })
                     };
-                    if let Some((sig, help)) = func {
-                        let sig = format!("<span foreground=\"purple\">{}</span><span foreground=\"gray\">{}</span>\n<span foreground=\"yellow\" size=\"small\">{}</span>", &t.content, sig.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), help);
+                    if let Some((args, help)) = func {
+                        let args: Vec<String> = args
+                            .into_iter()
+                            .map(|a| {
+                                let (n, t, v) = match a {
+                                    SignatureArg::Arg(n, t) => (
+                                        format!("<span foreground=\"limegreen\">{}</span>", n),
+                                        t,
+                                        "".into(),
+                                    ),
+                                    SignatureArg::OptArg(n, t) => (
+                                        format!("<span foreground=\"green\">{}</span>", n),
+                                        t,
+                                        "".into(),
+                                    ),
+                                    SignatureArg::DefArg(n, t, val) => (
+                                        format!("<span foreground=\"green\">{}</span>", n),
+                                        t,
+                                        format!(" = <span foreground=\"yellow\">{}</span>", val),
+                                    ),
+                                    SignatureArg::Args => {
+                                        return "<span foreground=\"red\">*args</span>".to_string()
+                                    }
+                                    SignatureArg::KwArgs => {
+                                        return "<span foreground=\"red\">**kwargs</span>"
+                                            .to_string()
+                                    }
+                                };
+                                format!(
+                                    "{}: <span foreground=\"gray\">{}</span>{}",
+                                    n,
+                                    t.replace("&", "&amp;")
+                                        .replace("<", "&lt;")
+                                        .replace(">", "&gt;"),
+                                    v
+                                )
+                            })
+                            .collect();
+                        let sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>({})</span>\n<span foreground=\"gray\" size=\"small\">{}</span>", &t.content, args.join(", "), help);
+                        self.imp().lab_signature.set_markup(&sig);
+                    } else {
+                        let sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>()</span>\n<span foreground=\"red\" size=\"small\">Function Does Not Exist. Please Make sure you spelled it correct, or loaded all plugins.</span>", &t.content);
                         self.imp().lab_signature.set_markup(&sig);
                     }
                 }

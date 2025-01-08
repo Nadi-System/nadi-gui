@@ -16,7 +16,8 @@ node[mcalpine -> smithland].linecolor=[0.0, 0.0, 1.0]
 node["willow-island",racine,mcalpine,smithland]
  set_attrs(textcolor=[1.0, 0.0, 0.0], nodecolor=[1.0, 0.0, 0.0])
 
+node.nodelabel = NAME
 node[smithland].nodelabel="Smithland (Outlet)"
 
-network.drawtable = ["<Name => {_NAME}", ["Order", "right", "{ORDER}"],
+network.drawtable = ["<Name => {_nodelabel}", ["Order", "right", "{ORDER}"],
 	{header="test", align="right", template="{LEVEL:calc(+1)}"}]

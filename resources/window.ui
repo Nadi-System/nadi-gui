@@ -206,41 +206,48 @@
 	      <property name="hexpand">1</property>
 	      <property name="halign">start</property>
 	      <property name="label">Signature
-And the Help for the Functions will Appear Here</property>
+	      And the Help for the Functions will Appear Here</property>
 	    </object>
 	  </child>
 	  <child>
-	    <object class="GtkScrolledWindow">
-	      <property name="hexpand">True</property>
-	      <property name="vexpand">True</property>
-	      <child>
-		<object class="GtkTextView" id="tv_frame">
-		  <property name="vexpand">1</property>
-		  <property name="focusable">1</property>
-		  <property name="input-purpose">terminal</property>
-		  <property name="monospace">1</property>
-		  <property name="buffer">buf_frame</property>
+	    <object class="GtkPaned">
+	      <property name="wide-handle">True</property>
+	      <property name="position">500</property>
+	      <property name="orientation">vertical</property>
+	      <property name="start-child">
+		<object class="GtkScrolledWindow">
+		  <property name="hexpand">True</property>
+		  <property name="vexpand">True</property>
+		  <child>
+		    <object class="GtkTextView" id="tv_frame">
+		      <property name="vexpand">1</property>
+		      <property name="focusable">1</property>
+		      <property name="input-purpose">terminal</property>
+		      <property name="monospace">1</property>
+		      <property name="buffer">buf_frame</property>
+		    </object>
+		  </child>
 		</object>
-	      </child>
-	    </object>
-	  </child>
-	  <child>
-	    <object class="GtkScrolledWindow">
-	      <property name="hexpand">True</property>
-	      <property name="vexpand">True</property>
-	      <child>
-		<object class="VteTerminal" id="term_main">
-		  <property name="vexpand">1</property>
-		  <property name="allow-hyperlink">1</property>
-		  <property name="input-enabled">1</property>
-		  <property name="scroll-on-keystroke">1</property>
-		  <property name="scroll-on-output">1</property>
+	      </property>
+	      <property name="end-child">
+		<object class="GtkScrolledWindow">
+		  <property name="hexpand">True</property>
+		  <property name="vexpand">True</property>
+		  <child>
+		    <object class="VteTerminal" id="term_main">
+		      <property name="vexpand">1</property>
+		      <property name="allow-hyperlink">1</property>
+		      <property name="input-enabled">1</property>
+		      <property name="scroll-on-keystroke">1</property>
+		      <property name="scroll-on-output">1</property>
+		    </object>
+		  </child>
 		</object>
-	      </child>
+              </property>
 	    </object>
 	  </child>
 	  </object>
-        </property>
+	</property>
       </object>
     </property>
   </template>
