@@ -193,20 +193,40 @@
 		</object>
 	      </child>
 	      <child>
-		<object class="GtkButton" id="btn_run">
-		  <property name="label">Run</property>
+		<object class="GtkButton" id="btn_run_line">
+		  <property name="label">Run Line</property>
+		  <property name="icon-name">run-line</property>
+		  <property name="tooltip-text">Run the Current Line or the Selection</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkButton" id="btn_run_buffer">
+		  <property name="label">Run Buffer</property>
 		  <property name="icon-name">run-code</property>
-		  <property name="tooltip-text">Run Selection or the whole Buffer</property>
+		  <property name="tooltip-text">Run the whole Buffer</property>
 		</object>
 	      </child>
 	    </object>
 	  </child>
 	  <child>
-	    <object class="GtkLabel" id="lab_signature">
-	      <property name="hexpand">1</property>
-	      <property name="halign">start</property>
-	      <property name="label">Signature
-	      And the Help for the Functions will Appear Here</property>
+	    <object class="GtkBox">
+	      <property name="hexpand">0</property>
+	      <property name="spacing">10</property>
+	      <child>
+		<object class="GtkButton" id="btn_sig">
+		  <property name="label">Help</property>
+		  <property name="icon-name">func-help</property>
+		  <property name="tooltip-text">Show the Help for the current Function</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkLabel" id="lab_signature">
+		  <property name="hexpand">1</property>
+		  <property name="halign">start</property>
+		  <property name="label">
+		    Welcome</property>
+		</object>
+	      </child>
 	    </object>
 	  </child>
 	  <child>
@@ -235,6 +255,7 @@
 		  <property name="vexpand">True</property>
 		  <child>
 		    <object class="VteTerminal" id="term_main">
+		      <property name="scrollback-lines">-1</property>
 		      <property name="vexpand">1</property>
 		      <property name="allow-hyperlink">1</property>
 		      <property name="input-enabled">1</property>

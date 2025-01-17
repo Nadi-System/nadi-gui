@@ -18,13 +18,17 @@ pub struct Window {
     #[template_child]
     pub da_network: TemplateChild<gtk::DrawingArea>,
     #[template_child]
+    pub btn_sig: TemplateChild<gtk::Button>,
+    #[template_child]
     pub lab_signature: TemplateChild<gtk::Label>,
     #[template_child]
     pub tv_frame: TemplateChild<gtk::TextView>,
     #[template_child]
     pub btn_sync: TemplateChild<gtk::ToggleButton>,
     #[template_child]
-    pub btn_run: TemplateChild<gtk::Button>,
+    pub btn_run_line: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub btn_run_buffer: TemplateChild<gtk::Button>,
     #[template_child]
     pub btn_comment: TemplateChild<gtk::Button>,
     #[template_child]

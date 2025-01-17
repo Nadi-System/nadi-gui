@@ -4,6 +4,8 @@ use nadi_core::prelude::*;
 
 #[derive(Debug, Clone, FromAttribute)]
 pub enum AttrColor {
+    MonoInt(i64),
+    Mono(f64),
     Named(String),
     Rgb((f64, f64, f64)),
     RgbNamed(Color),
@@ -18,6 +20,11 @@ impl std::default::Default for AttrColor {
 impl AttrColor {
     pub fn color(self) -> Result<Color, String> {
         let (r, g, b) = match self {
+            Self::MonoInt(i) => {
+                let v = i as f64 / 255.0;
+                (v, v, v)
+            }
+            Self::Mono(v) => (v, v, v),
             Self::RgbNamed(c) => return Ok(c),
             Self::Named(n) => color_by_name(&n).ok_or(format!("Invalid Color name {n:?}"))?,
             Self::Rgb(v) => v,
@@ -28,9 +35,9 @@ impl AttrColor {
 
 #[derive(Default, Debug, Clone, FromAttribute)]
 pub struct Color {
-    r: f64,
-    g: f64,
-    b: f64,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
 }
 
 impl Color {

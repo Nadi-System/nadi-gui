@@ -1,7 +1,6 @@
 use super::colors::AttrColor;
 use abi_stable::std_types::RSome;
 use cairo::Context;
-use gdk::Rectangle;
 use nadi_core::prelude::*;
 use nadi_core::table::{ColumnAlign, Table};
 use vte4::prelude::*;
@@ -127,13 +126,10 @@ pub fn draw_network_only(
     ctx.move_to(offx, offy);
     for n in net.nodes() {
         let n = n.lock();
-        set_node_color(&n, ctx, NODE_COLOR);
         let nx = left + delx * n.level() as f64;
         let ny = top - dely * n.index() as f64;
         ctx.move_to(nx, ny);
-        let rect = Rectangle::new(nx.floor() as i32 - 5, ny.floor() as i32 - 5, 10, 10);
-        ctx.add_rectangle(&rect);
-        _ = ctx.fill();
+        _ = n.draw_color(ctx);
         if let RSome(o) = n.output() {
             let o = o.lock();
             ctx.move_to(nx, ny);
@@ -205,6 +201,16 @@ pub fn draw_network_table(
     h: i32,
     _darea: Option<&gtk::DrawingArea>,
 ) -> anyhow::Result<()> {
+    // background
+    if let Ok(c) = net
+        .try_attr::<AttrColor>("bg_color")
+        .and_then(|c| c.color())
+    {
+        ctx.save()?;
+        c.set(ctx);
+        ctx.paint()?;
+        ctx.restore()?;
+    }
     ctx.set_source_rgb(0.0, 0.0, 1.0);
     ctx.set_font_size(14.0);
     let headers: Vec<&str> = table.columns.iter().map(|c| c.header.as_str()).collect();
@@ -306,11 +312,12 @@ pub fn draw_network_table(
             // } else {
             // 	ctx.set_source_rgb(0.35, 0.35, 0.6);
             // }
-            set_node_color(&n, ctx, NODE_COLOR);
-            ctx.move_to(x + 5.0, y);
-            ctx.arc(x, y, 5.0, 0.0, 2.0 * 3.1416);
-            ctx.fill()?;
-            ctx.stroke()?;
+            ctx.move_to(x, y);
+            n.draw_color(ctx)?;
+            // set_node_color(&n, ctx, NODE_COLOR);
+            // ctx.arc(x, y, 5.0, 0.0, 2.0 * 3.1416);
+            // ctx.fill()?;
+            // ctx.stroke()?;
 
             set_node_color(&n, ctx, TEXT_COLOR);
             for (i, (cell, a)) in row.iter().zip(&alignments).enumerate() {

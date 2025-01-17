@@ -972,11 +972,13 @@ version = "0.5.0"
 dependencies = [
  "abi_stable",
  "anyhow",
+ "cairo-rs",
  "colored",
  "filetime",
  "nadi_plugin",
  "nom",
  "number_range",
+ "regex",
  "string-template-plus",
  "subprocess",
  "termimad",

@@ -10,7 +10,7 @@ use itertools::Itertools;
 use nadi_core::parser::tokenizer::{TaskToken, Token};
 use nadi_core::parser::NadiError;
 use nadi_core::{
-    functions::{NadiFunctions, SignatureArg},
+    functions::{FuncArgType, NadiFunctions},
     network::Network,
     tasks::TaskContext,
 };
@@ -62,7 +62,36 @@ impl Window {
                 window.export();
             })
             .build();
-        self.add_action_entries([action_open, action_close, action_save, action_export]);
+        let action_run_line = ActionEntry::builder("run_line")
+            .activate(|window: &Window, _, _| {
+                window.run_line();
+            })
+            .build();
+        let action_run_buffer = ActionEntry::builder("run_buffer")
+            .activate(|window: &Window, _, _| {
+                window.run_buffer();
+            })
+            .build();
+        let action_help = ActionEntry::builder("help_line")
+            .activate(|window: &Window, _, _| {
+                window.help_line();
+            })
+            .build();
+        let action_comment = ActionEntry::builder("toggle_comment")
+            .activate(|window: &Window, _, _| {
+                window.toggle_comment();
+            })
+            .build();
+        self.add_action_entries([
+            action_open,
+            action_close,
+            action_save,
+            action_export,
+            action_run_line,
+            action_run_buffer,
+            action_help,
+            action_comment,
+        ]);
     }
 
     fn setup_callbacks(&self) {
@@ -87,30 +116,11 @@ impl Window {
             move |_| window.export()
         ));
 
-        // // The cursor position notify handles this as well
-        // self.imp().tv_frame.connect_move_cursor(clone!(
-        //     #[weak(rename_to=window)]
-        //     self,
-        //     move |tv, ms, step, _| {
-        //         let buf = tv.buffer();
-        //         let mut mark = buf.iter_at_mark(&buf.get_insert());
-        //         // since this event seems to trigger before the cursor
-        //         // is moved: simulating the movement
-        //         match ms {
-        //             gtk::MovementStep::DisplayLines => {
-        //                 mark.forward_lines(step);
-        //             }
-        //             gtk::MovementStep::VisualPositions => {
-        //                 mark.forward_chars(step);
-        //             }
-        //             gtk::MovementStep::Words => {
-        //                 mark.forward_word_ends(step);
-        //             }
-        //             _ => (),
-        //         }
-        //         window.display_signature(mark);
-        //     }
-        // ));
+        self.imp().btn_sig.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.help_line()
+        ));
 
         self.imp()
             .tv_frame
@@ -144,83 +154,132 @@ impl Window {
             }
         ));
 
-        self.imp().btn_run.connect_clicked(clone!(
+        self.imp().btn_run_line.connect_clicked(clone!(
             #[weak(rename_to=window)]
             self,
-            move |_| {
-                let buf = window.imp().tv_frame.buffer();
-                let tm = &window.imp().term_main;
-                let mut mark = buf.iter_at_mark(&buf.selection_bound());
-                let mut ins = buf.iter_at_mark(&buf.get_insert());
-                if mark == ins {
-                    mark = buf.start_iter();
-                    ins = buf.end_iter();
-                }
-                let selection = buf.text(&ins, &mark, true);
-                run_task(
-                    tm,
-                    &window.imp().da_network,
-                    format!("{}\n", selection.trim()),
-                );
-                term_prompt(&tm);
-                // since the task could have changed the network properties
-                window.imp().da_network.queue_draw();
-            }
+            move |_| window.run_line()
+        ));
+
+        self.imp().btn_run_buffer.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.run_buffer()
         ));
 
         self.imp().btn_comment.connect_clicked(clone!(
             #[weak(rename_to=window)]
             self,
-            move |_| {
-                let buf = window.imp().tv_frame.buffer();
-                let mut mark = buf.iter_at_mark(&buf.selection_bound());
-                let mut ins = buf.iter_at_mark(&buf.get_insert());
-                if mark == ins {
-                    mark = buf.start_iter();
-                    ins = buf.end_iter();
-                }
-                let selection = buf.text(&ins, &mark, true);
-                let iscomment = selection
-                    .lines()
-                    .map(|l| l.trim())
-                    .all(|l| l.is_empty() || l.starts_with('#'));
-                let mut newlines = String::new();
-                if iscomment {
-                    for l in selection.lines() {
-                        if !l.trim().is_empty() {
-                            let (x, y) = l.split_once('#').expect("should have #");
-                            newlines.push_str(x);
-                            if y.starts_with(' ') {
-                                newlines.push_str(&y[1..]);
-                            } else {
-                                newlines.push_str(y);
-                            }
-                        }
-                        newlines.push('\n');
-                    }
-                } else {
-                    for l in selection.lines() {
-                        if !l.trim().is_empty() {
-                            newlines.push('#');
-                            newlines.push(' ');
-                            newlines.push_str(l);
-                        }
-                        newlines.push('\n');
-                    }
-                }
-                if !selection.ends_with('\n') {
-                    // remove the extra '\n' is not in selection as
-                    // lines() ignores the last '\n'
-                    newlines.pop();
-                }
-                buf.delete(&mut mark, &mut ins);
-                buf.insert(&mut mark, &newlines);
-                let mut prev = mark;
-                prev.backward_chars(newlines.chars().count() as i32);
-                buf.select_range(&prev, &mark);
-                window.refresh_signature();
-            }
+            move |_| window.toggle_comment()
         ));
+    }
+
+    fn toggle_comment(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let mut mark = buf.iter_at_mark(&buf.selection_bound());
+        let mut ins = buf.iter_at_mark(&buf.get_insert());
+        let is_selection = mark != ins;
+        if !is_selection {
+            mark = buf.iter_at_line(ins.line()).unwrap();
+            if !ins.ends_line() {
+                ins.forward_to_line_end();
+            }
+        };
+        let selection = buf.text(&ins, &mark, true);
+        let iscomment = selection
+            .lines()
+            .map(|l| l.trim())
+            .all(|l| l.is_empty() || l.starts_with('#'));
+        let mut newlines = String::new();
+        if iscomment {
+            for l in selection.lines() {
+                if !l.trim().is_empty() {
+                    let (x, y) = l.split_once('#').expect("should have #");
+                    newlines.push_str(x);
+                    if y.starts_with(' ') {
+                        newlines.push_str(&y[1..]);
+                    } else {
+                        newlines.push_str(y);
+                    }
+                }
+                newlines.push('\n');
+            }
+        } else {
+            for l in selection.lines() {
+                if !l.trim().is_empty() {
+                    newlines.push('#');
+                    newlines.push(' ');
+                    newlines.push_str(l);
+                }
+                newlines.push('\n');
+            }
+        }
+        if !selection.ends_with('\n') {
+            // remove the extra '\n' is not in selection as
+            // lines() ignores the last '\n'
+            newlines.pop();
+        }
+        buf.delete(&mut mark, &mut ins);
+        buf.insert(&mut mark, &newlines);
+        if is_selection {
+            let mut prev = mark;
+            prev.backward_chars(newlines.chars().count() as i32);
+            buf.select_range(&prev, &mark);
+        }
+        self.refresh_signature();
+    }
+
+    fn run_line(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let mut mark = buf.iter_at_mark(&buf.selection_bound());
+        let mut ins = buf.iter_at_mark(&buf.get_insert());
+        if mark == ins {
+            mark = buf.iter_at_line(ins.line()).unwrap();
+            if !ins.ends_line() {
+                ins.forward_to_line_end();
+            }
+        };
+        self.run_tasks(buf.text(&mark, &ins, true).trim());
+        // ins.forward_cursor_position();
+        // buf.place_cursor(&ins);
+        // buf.notify("cursor-position");
+    }
+
+    fn run_buffer(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let mark = buf.start_iter();
+        let ins = buf.end_iter();
+        self.run_tasks(buf.text(&ins, &mark, true).trim());
+    }
+
+    fn run_tasks(&self, txt: &str) {
+        let term = &self.imp().term_main;
+        let darea = &self.imp().da_network;
+        if txt.trim() == "help" {
+            term.feed(b"TODO: Help \r\n");
+            return;
+        }
+        match nadi_core::parser::tokenizer::get_tokens(&txt) {
+            Ok(tokens) => {
+                for t in &tokens {
+                    term.feed(t.colored().replace("\n", "\r\n").as_bytes());
+                }
+                term.feed("\r\n".as_bytes());
+                match nadi_core::parser::tasks::parse(tokens) {
+                    Ok(tasks) => {
+                        run_tasks(term, darea, tasks);
+                    }
+                    Err(e) => {
+                        term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+                    }
+                }
+            }
+            Err(e) => {
+                term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+            }
+        }
+        term_prompt(&term);
+        // since the task could have changed the network properties
+        darea.queue_draw();
     }
 
     fn refresh_signature(&self) {
@@ -229,14 +288,33 @@ impl Window {
         self.display_signature(mark);
     }
 
+    fn help_line(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let mark = buf.iter_at_mark(&buf.get_insert());
+        let mut end = buf.iter_at_line(mark.line()).expect("should be valid line");
+        let start = end;
+        end.forward_line();
+        let line = buf.text(&start, &end, false);
+        if let Ok(tags) = nadi_core::parser::tokenizer::get_tokens(&line) {
+            if let Some(t) = tags
+                .into_iter()
+                .filter(|t| t.ty == TaskToken::Function)
+                .next()
+            {
+                if line.trim().starts_with("node") {
+                    self.run_tasks(&format!("help node {}", t.content))
+                } else if line.trim().starts_with("net") {
+                    self.run_tasks(&format!("help network {}", t.content))
+                } else {
+                    self.run_tasks(&format!("help {}", t.content))
+                }
+            }
+        }
+    }
+
     fn display_signature(&self, mark: TextIter) {
         let buf = self.imp().tv_frame.buffer();
-        let line = buf
-            .text(&buf.start_iter(), &mark, false)
-            .split('\n')
-            .count()
-            - 1;
-        let mut end = buf.iter_at_line(line as i32).expect("should be valid line");
+        let mut end = buf.iter_at_line(mark.line()).expect("should be valid line");
         let start = end;
         end.forward_line();
         let line = buf.text(&start, &end, false);
@@ -278,31 +356,36 @@ impl Window {
                             })
                     };
                     if let Some((args, help)) = func {
-                        let args: Vec<String> = args
-                            .into_iter()
-                            .map(|a| {
-                                let (n, t, v) = match a {
-                                    SignatureArg::Arg(n, t) => (
-                                        format!("<span foreground=\"limegreen\">{}</span>", n),
-                                        t,
+                        let args_color: Vec<String> = args
+                            .iter()
+                            .map(|f| {
+                                let (n, t, v) = match &f.category {
+                                    FuncArgType::Arg => (
+                                        format!("<span foreground=\"limegreen\">{}</span>", f.name),
+                                        &f.ty,
                                         "".into(),
                                     ),
-                                    SignatureArg::OptArg(n, t) => (
-                                        format!("<span foreground=\"green\">{}</span>", n),
-                                        t,
+                                    FuncArgType::OptArg => (
+                                        format!("<span foreground=\"green\">{}</span>", f.name),
+                                        &f.ty,
                                         "".into(),
                                     ),
-                                    SignatureArg::DefArg(n, t, val) => (
-                                        format!("<span foreground=\"green\">{}</span>", n),
-                                        t,
+                                    FuncArgType::DefArg(val) => (
+                                        format!("<span foreground=\"green\">{}</span>", f.name),
+                                        &f.ty,
                                         format!(" = <span foreground=\"yellow\">{}</span>", val),
                                     ),
-                                    SignatureArg::Args => {
-                                        return "<span foreground=\"red\">*args</span>".to_string()
+                                    FuncArgType::Args => {
+                                        return format!(
+                                            "<span foreground=\"red\">*{}</span>",
+                                            f.name
+                                        )
                                     }
-                                    SignatureArg::KwArgs => {
-                                        return "<span foreground=\"red\">**kwargs</span>"
-                                            .to_string()
+                                    FuncArgType::KwArgs => {
+                                        return format!(
+                                            "<span foreground=\"red\">**{}</span>",
+                                            f.name
+                                        )
                                     }
                                 };
                                 format!(
@@ -315,11 +398,18 @@ impl Window {
                                 )
                             })
                             .collect();
-                        let sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>({})</span>\n<span foreground=\"gray\" size=\"small\">{}</span>", &t.content, args.join(", "), help);
+                        let mut sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>({})</span>\n<span foreground=\"gray\" size=\"small\">{}</span>", &t.content, args_color.join(", "), help);
                         self.imp().lab_signature.set_markup(&sig);
+                        sig.push_str("\n<span size=\"small\"><b>Arguments:</b>\n");
+                        for (a, ac) in args.into_iter().zip(args_color) {
+                            sig.push_str(&format!("- {} : {}\n", ac, a.help));
+                        }
+                        sig.push_str("</span>");
+                        self.imp().btn_sig.set_tooltip_markup(Some(&sig));
                     } else {
                         let sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>()</span>\n<span foreground=\"red\" size=\"small\">Function Does Not Exist. Please Make sure you spelled it correct, or loaded all plugins.</span>", &t.content);
                         self.imp().lab_signature.set_markup(&sig);
+                        self.imp().btn_sig.set_tooltip_markup(Some(&sig));
                     }
                 }
             }
@@ -391,7 +481,7 @@ impl Window {
         unsafe {
             self.imp().da_network.set_data("tasks_ctx", tasks_ctx);
         }
-        run_task(tm, &self.imp().da_network, format!("{txt}\n"));
+        self.run_tasks(&txt);
         term_prompt(&tm);
         self.imp().da_network.queue_draw();
         Ok(())
@@ -477,6 +567,8 @@ impl Window {
         unsafe { term.set_data("current_line", String::new()) };
         let da = &self.imp().da_network;
         term.connect_commit(clone!(
+            #[weak(rename_to=window)]
+            self,
             #[weak]
             da,
             move |tm, ch, flag| {
@@ -491,11 +583,10 @@ impl Window {
                             unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
                         match line.trim() {
                             "" => (),
-                            "clear" => tm.reset(true, false),
+                            "clear" => tm.feed(b"\r\x1B[2J"),
                             l => {
-                                tm.feed(b"\r\x1B[A");
                                 term_prompt(&tm);
-                                run_task(tm, &da, format!("{}\n", l));
+                                window.run_tasks(&l);
                                 // since the task could have changed the network properties
                                 da.queue_draw();
                             }
@@ -508,7 +599,7 @@ impl Window {
                         let line: &mut String =
                             unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
                         line.clear();
-                        tm.feed(b" ^C");
+                        tm.feed(b" ^C\r\n");
                         term_prompt(&tm);
                     }
                     // backspace
@@ -609,32 +700,6 @@ fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
     }
 }
 
-fn run_task(term: &vte4::Terminal, darea: &gtk::DrawingArea, line: String) {
-    if line.trim() == "help" {
-        term.feed(b"TODO: Help \r\n");
-        return;
-    }
-    match nadi_core::parser::tokenizer::get_tokens(&line) {
-        Ok(tokens) => {
-            for t in &tokens {
-                term.feed(t.colored().replace("\n", "\r\n").as_bytes());
-            }
-            term.feed("\r\n".as_bytes());
-            match nadi_core::parser::tasks::parse(tokens) {
-                Ok(tasks) => {
-                    run_tasks(term, darea, tasks);
-                }
-                Err(e) => {
-                    term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-                }
-            }
-        }
-        Err(e) => {
-            term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-        }
-    }
-}
-
 fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_core::tasks::Task>) {
     let mut skin = termimad::MadSkin::default_dark();
     for h in &mut skin.headers {
@@ -660,9 +725,13 @@ fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_co
         term.feed(output.replace("\n", "\r\n").as_bytes());
         output.clear();
         match res {
-            Ok(Some(p)) => term.feed(p.replace("\n", "\r\n").as_bytes()),
+            Ok(Some(p)) => {
+                term.feed(p.replace("\n", "\r\n").as_bytes());
+                term.feed(b"\r\n");
+            }
             Err(p) => {
                 term.feed(p.replace("\n", "\r\n").as_bytes());
+                term.feed(b"\r\n");
                 break;
             }
             _ => (),
@@ -671,7 +740,7 @@ fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_co
 }
 
 fn term_prompt(tm: &vte4::Terminal) {
-    tm.feed(format!("\r\n{} ", ">>".blue()).as_bytes())
+    tm.feed(format!("\r\x1B[0J{} ", ">>".blue()).as_bytes())
 }
 
 fn completion(tm: &vte4::Terminal, line: &mut String, pre: &str, options: &[&str]) {

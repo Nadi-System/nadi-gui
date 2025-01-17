@@ -36,6 +36,10 @@ fn set_accels(app: &Application) {
     app.set_accels_for_action("win.open", &["<Ctrl>O"]);
     app.set_accels_for_action("win.save", &["<Ctrl>S"]);
     app.set_accels_for_action("win.export", &["<Ctrl>E"]);
+    app.set_accels_for_action("win.run_line", &["<Ctrl>R"]);
+    app.set_accels_for_action("win.run_buffer", &["<Ctrl>B"]);
+    app.set_accels_for_action("win.toggle_comment", &["<Alt>semicolon"]);
+    app.set_accels_for_action("win.help_line", &["<Ctrl>H"]);
 }
 
 fn build_ui(app: &Application) {
