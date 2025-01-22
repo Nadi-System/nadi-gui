@@ -263,18 +263,20 @@ impl Window {
                 for t in &tokens {
                     term.feed(t.colored().replace("\n", "\r\n").as_bytes());
                 }
-                term.feed("\r\n".as_bytes());
+                term.feed(b"\r\n");
                 match nadi_core::parser::tasks::parse(tokens) {
                     Ok(tasks) => {
                         run_tasks(term, darea, tasks);
                     }
                     Err(e) => {
                         term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+                        term.feed(b"\r\n");
                     }
                 }
             }
             Err(e) => {
                 term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
+                term.feed(b"\r\n");
             }
         }
         term_prompt(&term);
@@ -338,21 +340,39 @@ impl Window {
                             .functions
                             .node(&t.content)
                             .map(|f| (f.args(), f.short_help()))
+                            .or_else(|| {
+                                tasks_ctx
+                                    .functions
+                                    .env(&t.content)
+                                    .map(|f| (f.args(), f.short_help()))
+                            })
                     } else if line.trim().starts_with("net") {
                         tasks_ctx
                             .functions
                             .network(&t.content)
                             .map(|f| (f.args(), f.short_help()))
+                            .or_else(|| {
+                                tasks_ctx
+                                    .functions
+                                    .env(&t.content)
+                                    .map(|f| (f.args(), f.short_help()))
+                            })
                     } else {
                         tasks_ctx
                             .functions
-                            .node(&t.content)
+                            .env(&t.content)
                             .map(|f| (f.args(), f.short_help()))
                             .or_else(|| {
                                 tasks_ctx
                                     .functions
-                                    .network(&t.content)
+                                    .node(&t.content)
                                     .map(|f| (f.args(), f.short_help()))
+                                    .or_else(|| {
+                                        tasks_ctx
+                                            .functions
+                                            .network(&t.content)
+                                            .map(|f| (f.args(), f.short_help()))
+                                    })
                             })
                     };
                     if let Some((args, help)) = func {
