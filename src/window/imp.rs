@@ -26,6 +26,8 @@ pub struct Window {
     #[template_child]
     pub btn_sync: TemplateChild<gtk::ToggleButton>,
     #[template_child]
+    pub btn_run_func: TemplateChild<gtk::Button>,
+    #[template_child]
     pub btn_run_line: TemplateChild<gtk::Button>,
     #[template_child]
     pub btn_run_buffer: TemplateChild<gtk::Button>,

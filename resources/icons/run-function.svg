@@ -69,17 +69,15 @@
        height="0.86907095"
        x="0"
        y="7.5938387" />
-    <text
-       xml:space="preserve"
-       style="font-size:6.90933px;line-height:0;font-family:FreeSans;-inkscape-font-specification:FreeSans;letter-spacing:0px;word-spacing:0px;fill:#800000;stroke-width:0.264583"
-       x="4.4044008"
-       y="5.2787323"
+    <path
+       d="M 4.3864012,1.3156043 V 0.83049845 h 2.633733 V 3.1934335 H 6.4972828 V 1.3156043 Z"
        id="text5"
-       transform="scale(0.9999288,1.0000712)"><tspan
-         id="tspan5"
-         style="fill:#800000;stroke-width:0.264583"
-         x="4.4044008"
-         y="5.2787323"
-         sodipodi:role="line">L</tspan></text>
+       style="font-size:4.12531px;line-height:0;font-family:FreeSans;-inkscape-font-specification:FreeSans;letter-spacing:0px;word-spacing:0px;fill:#800000;stroke-width:0.264583"
+       aria-label="L"
+       sodipodi:nodetypes="ccccccc" />
+    <path
+       style="fill:#770000;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       d="M 5.2984779,2.4828693 6.705689,4.9657384 8.343171,2.3733309"
+       id="path5" />
   </g>
 </svg>

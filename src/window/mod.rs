@@ -7,8 +7,9 @@ use gtk::subclass::prelude::*;
 use gtk::{gio, glib, Application, TextBuffer};
 use gtk::{prelude::*, TextIter};
 use itertools::Itertools;
-use nadi_core::parser::tokenizer::{TaskToken, Token};
+use nadi_core::parser::tokenizer::{self, TaskToken, Token};
 use nadi_core::parser::NadiError;
+use nadi_core::tasks::TaskKeyword;
 use nadi_core::{
     functions::{FuncArgType, NadiFunctions},
     network::Network,
@@ -62,6 +63,11 @@ impl Window {
                 window.export();
             })
             .build();
+        let action_run_func = ActionEntry::builder("run_func")
+            .activate(|window: &Window, _, _| {
+                window.run_func();
+            })
+            .build();
         let action_run_line = ActionEntry::builder("run_line")
             .activate(|window: &Window, _, _| {
                 window.run_line();
@@ -87,6 +93,7 @@ impl Window {
             action_close,
             action_save,
             action_export,
+            action_run_func,
             action_run_line,
             action_run_buffer,
             action_help,
@@ -152,6 +159,12 @@ impl Window {
                 window.refresh_signature();
                 window.format_task(&tb);
             }
+        ));
+
+        self.imp().btn_run_func.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.run_func()
         ));
 
         self.imp().btn_run_line.connect_clicked(clone!(
@@ -228,6 +241,92 @@ impl Window {
         self.refresh_signature();
     }
 
+    fn task_at_mark(&self) -> (TextIter, TextIter) {
+        let buf = self.imp().tv_frame.buffer();
+        let mut ins = buf.iter_at_mark(&buf.get_insert());
+        let mut line = ins.line();
+        let mut mark;
+        loop {
+            // seek backwards until we find a task keyword to find the start
+            if line < 0 {
+                mark = buf.start_iter();
+                break;
+            }
+            mark = buf.iter_at_line(line).unwrap();
+            let ins2 = buf.iter_at_line(line + 1).unwrap();
+            let text = buf.text(&mark, &ins2, true);
+            let tkns = match tokenizer::get_tokens(&text) {
+                Ok(t) => t,
+                Err(_) => {
+                    line -= 1;
+                    continue;
+                }
+            };
+            let tokens = tokenizer::VecTokens::new(tkns);
+            let start_ok = match tokens.peek_next_no_ws(true) {
+                Some(t) => match t.ty {
+                    TaskToken::Keyword(TaskKeyword::In)
+                    | TaskToken::Keyword(TaskKeyword::Match) => false,
+                    TaskToken::Keyword(_) => true,
+                    _ => false,
+                },
+                None => true,
+            };
+            if !start_ok {
+                line -= 1;
+            } else {
+                break;
+            }
+        }
+        let mut text: String;
+        let mut line = ins.line();
+        loop {
+            // seek forward until we have a complete task
+            line += 1;
+            ins = match buf.iter_at_line(line) {
+                Some(i) => i,
+                None => {
+                    ins = buf.end_iter();
+                    break;
+                }
+            };
+            text = buf.text(&mark, &ins, true).trim().to_string();
+            let tokens = match tokenizer::get_tokens(&text) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if tokens.iter().any(|t| t.ty == TaskToken::Quote) {
+                // there is unclosed string there
+                ()
+            } else {
+                match nadi_core::parser::tasks::parse(tokens) {
+                    Ok(v) => {
+                        if !v.is_empty() {
+                            break;
+                        }
+                    }
+                    Err(e) => match e.ty {
+                        nadi_core::parser::ParseErrorType::Unclosed => (),
+                        _ => break,
+                    },
+                }
+            };
+        }
+        (mark, ins)
+    }
+
+    fn run_func(&self) {
+        let buf = self.imp().tv_frame.buffer();
+        let (mark, ins) = self.task_at_mark();
+        let text = buf.text(&mark, &ins, true);
+        self.run_tasks(&text);
+        buf.place_cursor(&ins);
+        self.imp()
+            .tv_frame
+            .scroll_to_mark(&buf.get_insert(), 0.1, false, 0.0, 0.0);
+        self.imp().tv_frame.grab_focus();
+    }
+
     fn run_line(&self) {
         let buf = self.imp().tv_frame.buffer();
         let mut mark = buf.iter_at_mark(&buf.selection_bound());
@@ -258,7 +357,7 @@ impl Window {
             term.feed(b"TODO: Help \r\n");
             return;
         }
-        match nadi_core::parser::tokenizer::get_tokens(&txt) {
+        match tokenizer::get_tokens(&txt) {
             Ok(tokens) => {
                 for t in &tokens {
                     term.feed(t.colored().replace("\n", "\r\n").as_bytes());
@@ -297,7 +396,7 @@ impl Window {
         let start = end;
         end.forward_line();
         let line = buf.text(&start, &end, false);
-        if let Ok(tags) = nadi_core::parser::tokenizer::get_tokens(&line) {
+        if let Ok(tags) = tokenizer::get_tokens(&line) {
             if let Some(t) = tags
                 .into_iter()
                 .filter(|t| t.ty == TaskToken::Function)
@@ -320,7 +419,7 @@ impl Window {
         let start = end;
         end.forward_line();
         let line = buf.text(&start, &end, false);
-        match nadi_core::parser::tokenizer::get_tokens(&line) {
+        match tokenizer::get_tokens(&line) {
             Ok(tags) => {
                 if let Some(t) = tags
                     .into_iter()
@@ -808,12 +907,12 @@ fn common_prefix<'a>(strs: &'a [&str]) -> &'a str {
 
 fn apply_tags(point: &mut TextIter, tb: &TextBuffer) {
     let text = tb.text(&point, &tb.end_iter(), true);
-    match nadi_core::parser::tokenizer::get_tokens(&text) {
+    match tokenizer::get_tokens(&text) {
         Ok(tags) => apply_token_tags(point, tb, &tags),
         Err(e) => {
             // there is an error somewhere; so we skip that line
             let valid = text.split("\n").take(e.line).join("\n");
-            match nadi_core::parser::tokenizer::get_tokens(&valid) {
+            match tokenizer::get_tokens(&valid) {
                 Ok(tags) => apply_token_tags(point, tb, &tags),
                 Err(_e) => {
                     // This should never happen, but it happens when
@@ -847,6 +946,7 @@ fn apply_token_tags(point: &mut TextIter, tb: &TextBuffer, tokens: &[Token]) {
             TaskToken::NewLine | TaskToken::WhiteSpace => continue,
             TaskToken::PathSep => "pathsep",
             TaskToken::Assignment => "equal",
+            TaskToken::Quote => "error2",
             _ => continue,
         };
         tb.apply_tag_by_name(tg, &st, &point);

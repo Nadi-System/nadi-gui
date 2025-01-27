@@ -31,7 +31,15 @@
 	  <object class="GtkTextTag">
 	    <property name="name">error</property>
 	    <property name="underline">error</property>
-	    <property name="underline-rgba">rgba(250,150,150,1)</property>
+	    <property name="underline-rgba">rgba(250,50,50,1)</property>
+	  </object>
+	</child>
+	<child type="tag">
+	  <object class="GtkTextTag">
+	    <property name="name">error2</property>
+	    <property name="foreground-rgba">rgba(250,50,50,1)</property>
+	    <property name="underline">error</property>
+	    <property name="underline-rgba">rgba(250,50,50,1)</property>
 	  </object>
 	</child>
 	<child type="tag">
@@ -190,6 +198,13 @@
 		  <property name="label">Comment</property>
 		  <property name="icon-name">comment</property>
 		  <property name="tooltip-text">Comment/Uncomment Selection or the whole Buffer</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkButton" id="btn_run_func">
+		  <property name="label">Run Function</property>
+		  <property name="icon-name">run-function</property>
+		  <property name="tooltip-text">Run the Current Function and Goto Next</property>
 		</object>
 	      </child>
 	      <child>
