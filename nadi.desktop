@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=0.1.0
+Name=Network Analysis and Data Integration (NADI)
+Comment=Visualize and Run tasks in a network
+# Path=
+Exec=nadi-gui
+Icon=/usr/share/nadi.svg
+Terminal=false
+Categories=Network;Science;DataVisualization;IDE;
