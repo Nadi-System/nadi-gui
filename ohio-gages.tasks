@@ -1,0 +1,106 @@
+network load_file("/home/gaurav/work/nadi-project/codes/nadi-gis/data/ohio-gages.network")
+network gis_load_attrs("/home/gaurav/work/nadi-project/codes/nadi-gis/nation/usgs.gpkg", "SiteNumber")
+network gis_load_attrs("/home/gaurav/github/nadi/conus/gis-final/GageLoc.shp.zip", "SOURCE_FEA")
+network gis_load_attrs("/home/gaurav/github/nadi/conus/gis-final/usgs-drainage.csv", "SiteNumber")
+# num dams and gages from another analysis
+network gis_load_attrs("/home/gaurav/work/nadi-project/codes/nadi-gis/data/ohio-count.gpkg", "NAME")
+
+node.inputs = inputs_len()
+node.drain_a = get_attr("Drainage", 0.0)
+node.inputs_d = inputs("drain_a")
+node.ndam
+node.inputs_dam = inputs("ndam")
+node.inputs_ldam = inputs("nldam")
+node(INDEX > 0).output_d = output("drain_a")
+node(INDEX > 0).output_dams = output("ndam")
+node(INDEX > 0).output_ldams = output("nldam")
+# node.inputs_d
+node set_series("area", inputs_d, "Floats")
+node.inputs_sum = sr_sum("area")
+node set_series("ndam", inputs_dam, "Integers")
+node.inputs_dams = sr_sum("ndam")
+node set_series("nldam", inputs_ldam, "Integers")
+node.inputs_ldams = sr_sum("nldam")
+# Only one error yay
+node(inputs_sum > drain_a & drain_a) array(INDEX, inputs_sum, drain_a, SiteName)
+node(inputs_sum > drain_a & drain_a).textcolor = "red"
+# for now just removing the problematic station
+network(inputs_sum > drain_a & drain_a) subset(keep = false)
+network(inputs > 0) count() # do experiment on this 259 stations
+# node.has_streamflow = exists("/home/gaurav/pendrive/conus/streamflow/{_NAME}.csv", 1)
+# network count()
+# network(has_streamflow) count()
+node(INDEX > 0).valid_for_ex = and(
+	gt(inputs_sum, 0),
+	gt(drain_a, 0),
+	gt(output_d, 0),
+	lt(inputs_sum, drain_a)
+)
+node(valid_for_ex).inp_ratio = float_div(drain_a, inputs_sum)
+node(valid_for_ex).out_ratio = float_div(drain_a, output_d)
+network(valid_for_ex) count()
+node(valid_for_ex) datafill_experiment("test", "/home/gaurav/pendrive/conus/streamflow/{_NAME}.csv", "drain_a"
+#	,experiments=100, samples=500
+)
+
+# node(good_nodes) datafill_experiment("test", "/home/gaurav/pendrive/conus/streamflow/{_NAME}.csv", "drain_a", experiments=100, samples=500)
+# node(valid_for_ex) sr_to_array("test_forward_nse")
+# node(valid_for_ex).test_nse_mean = sr_mean("test_forward_nse")
+# node(valid_for_ex).test_nse_mean
+# node(valid_for_ex) sr_mean("test_oratio_nse")
+# node(valid_for_ex) array(inp_ratio, out_ratio)
+network(valid_for_ex) save_experiments_csv(
+	"/tmp/experiments.csv",
+	["NAME", "drain_a", "inputs", "ndam", "inputs_dams", "inputs_ldams", "output_dams", "output_ldams", "inp_ratio", "out_ratio"],
+	"test",
+	["nse",	"rmse", "nrmse"]
+)
+
+node(valid_for_ex).good_nodes = and(
+	lt(inp_ratio, 1.2),
+	gt(out_ratio, 0.8)
+)
+network(good_nodes) count()
+# network(valid_for_ex) save_experiments_csv(
+# 	"/tmp/experiments-100.csv",
+# 	["NAME", "drain_a", "inputs", "ndam", "inputs_dams", "inputs_ldams", "output_dams", "output_ldams", "inp_ratio", "out_ratio"],
+# 	"test",
+# 	["nse",	"rmse", "nrmse"]
+# )
+
+node(good_nodes).NAME
+node(good_nodes) array(inp_ratio, out_ratio)
+node[03342000] array(inp_ratio, out_ratio)
+node[03342000] datafill_experiment("test", "/home/gaurav/pendrive/conus/streamflow/{_NAME}.csv", "drain_a")
+node[03342000] sr_to_array("test_forward_nse")
+node(good_nodes) sr_mean("test_linear_nse")
+
+
+end
+node(LEVEL = 0).is_ohio = str_match("^Ohio River", SiteName)
+network(LEVEL = 0) count()
+node(is_ohio).SiteName
+
+# node print_all_attrs()
+
+network.drawtable = "
+>Drainage => {Drainage:f(2)?}
+ID => {_NAME}
+<Name => {_SiteName?}
+"
+
+node.nodeshape = "circle"
+node.nodesize = 5.0
+node.nodecolor = "green"
+node(dam_height > 49).textcolor = "gray"
+node(!Drainage).nodecolor = "red"
+node(!Drainage).textcolor = 100
+
+
+# ## The following makes the size based on basin area and the shape based on if basin area is known or not
+node.draina = 0.1
+node(Drainage).draina = float(Drainage)
+
+# # this sets the node sizes based on log of the value
+node.drainal = float_transform(draina, "sqrt")
+network set_nodesize_attrs("drainal", 1e3, maxsize=15)

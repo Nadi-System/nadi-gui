@@ -15,6 +15,7 @@ use nadi_core::{
     network::Network,
     tasks::TaskContext,
 };
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::Iterator;
@@ -34,15 +35,93 @@ impl Window {
     }
 
     fn setup_data(&self) {
+        let ctx = TaskContext::new(None);
         unsafe {
-            self.imp()
-                .da_network
-                .set_data("tasks_ctx", TaskContext::new(None));
+            self.imp().da_network.set_data("tasks_ctx", ctx);
         }
     }
 
+    fn setup_menu(&self) {
+        let ctx =
+            if let Some(ctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
+                let ctx: &mut TaskContext = unsafe { &mut *ctx.as_ptr() };
+                ctx
+            } else {
+                return;
+            };
+
+        let funcs = &self.imp().menu_functions;
+        let env = gio::Menu::new();
+        let node = gio::Menu::new();
+        let network = gio::Menu::new();
+        let mut action_entries = vec![];
+        let functions = ctx
+            .functions
+            .env_functions()
+            .keys()
+            .sorted()
+            .map(|f| ("env", &env, f))
+            .chain(
+                ctx.functions
+                    .node_functions()
+                    .keys()
+                    .sorted()
+                    .map(|f| ("node", &node, f)),
+            )
+            .chain(
+                ctx.functions
+                    .network_functions()
+                    .keys()
+                    .sorted()
+                    .map(|f| ("network", &network, f)),
+            );
+        let plugins = gio::Menu::new();
+        let mut plugins_each = HashMap::new();
+        for (t, m, n) in functions {
+            let act = n.as_str();
+            let name = n.to_string();
+            action_entries.push({
+                ActionEntry::builder(&format!("{t}.{act}"))
+                    .activate(move |window: &Window, _, _| {
+                        let tv = &window.imp().tv_frame;
+                        tv.grab_focus();
+                        let pre = match t {
+                            "node" | "network" => format!("{t} "),
+                            _ => String::new(),
+                        };
+                        let buf = tv.buffer();
+                        buf.insert_at_cursor(&format!("{pre}{name}()"));
+                        let mut ins = buf.iter_at_mark(&buf.get_insert());
+                        ins.backward_char();
+                        buf.place_cursor(&ins);
+                        tv.grab_focus();
+                    })
+                    .build()
+            });
+            m.append_item(&gio::MenuItem::new(
+                Some(&n.replace("_", "-")),
+                Some(&format!("win.{t}.{act}")),
+            ));
+            let (plugin, func) = n
+                .split_once('.')
+                .expect("Function name should be plugin.name");
+            let pm = plugins_each.entry(plugin).or_insert(gio::Menu::new());
+            pm.append_item(&gio::MenuItem::new(
+                Some(&format!("{t} {}", func.replace("_", "-"))),
+                Some(&format!("win.{t}.{act}")),
+            ));
+        }
+        funcs.append_submenu(Some("Environment"), &env);
+        funcs.append_submenu(Some("Node"), &node);
+        funcs.append_submenu(Some("Network"), &network);
+        for n in plugins_each.keys().sorted() {
+            plugins.append_submenu(Some(&n.replace("_", "-")), &plugins_each[n]);
+        }
+        funcs.append_section(Some("Plugins"), &plugins);
+        self.add_action_entries(action_entries);
+    }
+
     fn setup_actions(&self) {
-        // Add action "close" to `window` taking no parameter
         let action_close = ActionEntry::builder("close")
             .activate(|window: &Window, _, _| {
                 window.close();
@@ -53,9 +132,24 @@ impl Window {
                 window.open();
             })
             .build();
+        let action_new = ActionEntry::builder("new")
+            .activate(|window: &Window, _, _| {
+                let _ = window.new_file();
+            })
+            .build();
         let action_save = ActionEntry::builder("save")
             .activate(|window: &Window, _, _| {
                 let _ = window.save_file();
+            })
+            .build();
+        let action_save_as = ActionEntry::builder("saveas")
+            .activate(|window: &Window, _, _| {
+                let _ = window.save_file_as();
+            })
+            .build();
+        let action_refresh = ActionEntry::builder("refresh")
+            .activate(|window: &Window, _, _| {
+                window.imp().da_network.queue_draw();
             })
             .build();
         let action_export = ActionEntry::builder("export")
@@ -88,16 +182,31 @@ impl Window {
                 window.toggle_comment();
             })
             .build();
+        let action_book = ActionEntry::builder("book")
+            .activate(|window: &Window, _, _| {
+                window.book();
+            })
+            .build();
+        let action_about = ActionEntry::builder("about")
+            .activate(|window: &Window, _, _| {
+                window.about();
+            })
+            .build();
         self.add_action_entries([
             action_open,
             action_close,
+            action_new,
             action_save,
+            action_save_as,
+            action_refresh,
             action_export,
             action_run_func,
             action_run_line,
             action_run_buffer,
             action_help,
             action_comment,
+            action_book,
+            action_about,
         ]);
     }
 
@@ -566,9 +675,37 @@ impl Window {
         self.refresh_signature();
     }
 
+    pub fn book(&self) {
+        let _ = webbrowser::open_browser(
+            webbrowser::Browser::Default,
+            "https://nadi-system.github.io/preface.html",
+        );
+    }
+
+    pub fn about(&self) {
+        let diag = gtk::AboutDialog::builder()
+            .program_name("Network Analysis and Data Integration (NADI)")
+            .version(format!(
+                "{} (nadi_core: {})",
+                env!("CARGO_PKG_VERSION"),
+                nadi_core::NADI_CORE_VERSION
+            ))
+            .logo_icon_name("nadi")
+            .website("https://nadi-system.github.io")
+            .authors(["Gaurav Atreya <allmanpride@gmail.com>"])
+            .license_type(gtk::License::Gpl30)
+            .build();
+        diag.show();
+    }
+
     pub fn export(&self) {
+        let filters = gtk::FileFilter::new();
+        for mime in ["image/png", "image/svg", "application/pdf"] {
+            filters.add_mime_type(mime);
+        }
         let mut dialog = gtk::FileDialog::builder()
-            .title("Export File")
+            .title("Export Image File")
+            .default_filter(&filters)
             .accept_label("Save");
         let txt = self.imp().txt_browse.text();
         if !txt.is_empty() {
@@ -618,6 +755,54 @@ impl Window {
             self.reload_network()?
         }
         Ok(())
+    }
+
+    pub fn new_file(&self) -> anyhow::Result<()> {
+        self.browse_new_file(|w| {
+            let buf = w.imp().tv_frame.buffer();
+            w.imp()
+                .tv_frame
+                .buffer()
+                .delete(&mut buf.start_iter(), &mut buf.end_iter());
+        });
+        Ok(())
+    }
+
+    pub fn browse_new_file(&self, callback: fn(Window)) {
+        let filters = gtk::FileFilter::new();
+        filters.add_pattern("*.tasks");
+        let mut dialog = gtk::FileDialog::builder()
+            .title("Save Tasks File As")
+            .default_filter(&filters)
+            .accept_label("Save");
+        let txt = self.imp().txt_browse.text();
+        if !txt.is_empty() {
+            dialog = dialog.initial_file(&gio::File::for_path(txt));
+        };
+        dialog.build().save(
+            Some(&self.clone()),
+            gio::Cancellable::NONE,
+            clone!(
+                #[weak(rename_to=window)]
+                self,
+                move |file| {
+                    if let Ok(file) = file {
+                        let filename = file.path().expect("Couldn't get file path");
+                        let name = filename.to_string_lossy().to_string();
+                        window.imp().txt_browse.set_text(&name);
+                        callback(window);
+                    }
+                }
+            ),
+        );
+    }
+
+    pub fn save_file_as(&self) {
+        self.browse_new_file(|w| {
+            if let Err(e) = w.save_file() {
+                eprintln!("Error saving file: {e:?}");
+            }
+        });
     }
 
     pub fn open_file(&self, file: &gtk::gio::File) -> anyhow::Result<()> {

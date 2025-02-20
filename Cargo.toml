@@ -15,6 +15,7 @@ itertools = "0.13.0"
 nadi_core = {path="../nadi_core/", features=["functions"]}
 termimad = "0.31.1"
 vte4 = "0.8.0"
+webbrowser = "1.0.3"
 
 [build-dependencies]
 glib-build-tools = "0.18.0"

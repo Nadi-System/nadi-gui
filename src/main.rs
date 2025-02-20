@@ -34,6 +34,7 @@ fn main() -> glib::ExitCode {
 fn set_accels(app: &Application) {
     app.set_accels_for_action("win.close", &["<Ctrl>W"]);
     app.set_accels_for_action("win.open", &["<Ctrl>O"]);
+    app.set_accels_for_action("win.new", &["<Ctrl>N"]);
     app.set_accels_for_action("win.save", &["<Ctrl>S"]);
     app.set_accels_for_action("win.export", &["<Ctrl>E"]);
     app.set_accels_for_action("win.run_func", &["<Ctrl>R"]);

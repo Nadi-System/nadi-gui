@@ -10,6 +10,10 @@ use nadi_core::network::Network;
 #[template(resource = "/org/zerosofts/NadiGui/window.ui")]
 pub struct Window {
     #[template_child]
+    pub main_menubar: TemplateChild<gtk::PopoverMenuBar>,
+    #[template_child]
+    pub menu_functions: TemplateChild<gtk::gio::Menu>,
+    #[template_child]
     pub txt_browse: TemplateChild<gtk::Text>,
     #[template_child]
     pub btn_browse: TemplateChild<gtk::Button>,
@@ -69,6 +73,7 @@ impl ObjectImpl for Window {
         obj.setup_actions();
         obj.setup_drawing_area();
         obj.setup_term();
+        obj.setup_menu();
     }
 }
 

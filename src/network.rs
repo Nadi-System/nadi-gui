@@ -211,7 +211,14 @@ pub fn draw_network_table(
         ctx.paint()?;
         ctx.restore()?;
     }
-    ctx.set_source_rgb(0.0, 0.0, 1.0);
+    if let Ok(c) = net
+        .try_attr::<AttrColor>("header_color")
+        .and_then(|c| c.color())
+    {
+        c.set(ctx);
+    } else {
+        ctx.set_source_rgb(0.0, 0.0, 1.0);
+    }
     ctx.set_font_size(14.0);
     let headers: Vec<&str> = table.columns.iter().map(|c| c.header.as_str()).collect();
     let contents: Vec<Vec<String>> = table
