@@ -181,8 +181,8 @@
   </menu>
   <template class="NadiGuiWindow" parent="GtkApplicationWindow">
     <property name="title" translatable="1">NADI</property>
-    <property name="default-width">500</property>
-    <property name="default-height">500</property>
+    <property name="default-width">1200</property>
+    <property name="default-height">900</property>
     <property name="show-menubar">true</property>
     <property name="icon-name">nadi</property>
     <property name="child">

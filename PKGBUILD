@@ -17,7 +17,7 @@ package() {
     mkdir -p "$pkgdir/usr/bin"
     cp "../target/release/${pkgname}" "$pkgdir/usr/bin/${pkgname}"
     mkdir -p "$pkgdir/usr/share/applications/"
-    cp "../${pkgname}.desktop" "$pkgdir/usr/share/applications/${pkgname}.desktop"
+    cp "../org.zerosofts.NadiGui.desktop" "$pkgdir/usr/share/applications/org.zerosofts.NadiGui.desktop"
     mkdir -p "$pkgdir/usr/share/${pkgname}/icons/"
     cp "../resources/window.ui" "$pkgdir/usr/share/${pkgname}/"
     cp "../resources/resources.gresource.xml" "$pkgdir/usr/share/${pkgname}/"
