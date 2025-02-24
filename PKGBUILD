@@ -6,7 +6,7 @@ pkgdesc="Network Analysis and Data Integration GUI+IDE"
 arch=('x86_64')
 url="https://github.com/Nadi-System/${pkgname}"
 license=('GPL3')
-depends=('gcc-libs' 'gtk4' 'vte4')
+depends=('gcc-libs' 'gtk4')
 makedepends=('rust' 'cargo' 'git')
 
 build() {

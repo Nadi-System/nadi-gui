@@ -1,13 +1,13 @@
 use super::colors::AttrColor;
 use abi_stable::std_types::RSome;
 use cairo::Context;
+use gtk::prelude::DrawingAreaExt;
+use gtk::prelude::WidgetExt;
 use nadi_core::prelude::*;
 use nadi_core::table::{ColumnAlign, Table};
-use vte4::prelude::*;
 
 // TODO make it better later
 
-const NODE_COLOR: &str = "nodecolor";
 const LINE_COLOR: &str = "linecolor";
 const TEXT_COLOR: &str = "textcolor";
 const LINE_WIDTH: &str = "linewidth";

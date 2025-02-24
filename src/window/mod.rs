@@ -1,6 +1,6 @@
 mod imp;
 use super::network;
-use colored::Colorize;
+use crate::tokens::TokenMarkup;
 use gio::ActionEntry;
 use glib::{clone, Object};
 use gtk::subclass::prelude::*;
@@ -8,18 +8,17 @@ use gtk::{gio, glib, Application, TextBuffer};
 use gtk::{prelude::*, TextIter};
 use itertools::Itertools;
 use nadi_core::parser::tokenizer::{self, TaskToken, Token};
-use nadi_core::parser::NadiError;
+use nadi_core::parser::{NadiError, ParseError, ParseErrorType};
 use nadi_core::tasks::TaskKeyword;
 use nadi_core::{
-    functions::{FuncArgType, NadiFunctions},
+    functions::FuncArgType,
     network::Network,
-    tasks::TaskContext,
+    tasks::{Task, TaskContext},
 };
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::Iterator;
-use vte4::prelude::*;
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -41,6 +40,7 @@ impl Window {
         }
     }
 
+    #[allow(deprecated)]
     fn setup_menu(&self) {
         let ctx =
             if let Some(ctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
@@ -75,11 +75,21 @@ impl Window {
                     .sorted()
                     .map(|f| ("network", &network, f)),
             );
+
+        // command entry
+        let compl = gtk::EntryCompletion::new();
+        // Use the first (and only) column available to set the autocompletion text
+        compl.set_text_column(0);
+        compl.set_minimum_key_length(1);
+        compl.set_popup_completion(true);
+        // Create a ListStore of items
+        let store = gtk::ListStore::new(&[glib::Type::STRING]);
         let plugins = gio::Menu::new();
         let mut plugins_each = HashMap::new();
         for (t, m, n) in functions {
             let act = n.as_str();
             let name = n.to_string();
+            store.set(&store.append(), &[(0, &format!("{t} {act}"))]);
             action_entries.push({
                 ActionEntry::builder(&format!("{t}.{act}"))
                     .activate(move |window: &Window, _, _| {
@@ -105,12 +115,15 @@ impl Window {
             let (plugin, func) = n
                 .split_once('.')
                 .expect("Function name should be plugin.name");
+            store.set(&store.append(), &[(0, &format!("{t} {func}"))]);
             let pm = plugins_each.entry(plugin).or_insert(gio::Menu::new());
             pm.append_item(&gio::MenuItem::new(
                 Some(&format!("{t} {}", func.replace("_", "-"))),
                 Some(&format!("win.{t}.{act}")),
             ));
         }
+        compl.set_model(Some(&store));
+        self.imp().txt_term.set_completion(Some(&compl));
         funcs.append_submenu(Some("Environment"), &env);
         funcs.append_submenu(Some("Node"), &node);
         funcs.append_submenu(Some("Network"), &network);
@@ -172,6 +185,11 @@ impl Window {
                 window.run_buffer();
             })
             .build();
+        let action_run_term = ActionEntry::builder("run_term")
+            .activate(|window: &Window, _, _| {
+                window.run_term();
+            })
+            .build();
         let action_help = ActionEntry::builder("help_line")
             .activate(|window: &Window, _, _| {
                 window.help_line();
@@ -203,6 +221,7 @@ impl Window {
             action_run_func,
             action_run_line,
             action_run_buffer,
+            action_run_term,
             action_help,
             action_comment,
             action_book,
@@ -247,16 +266,16 @@ impl Window {
                 move |buf| {
                     // let buf = window.imp().tv_frame.buffer();
                     let mark = buf.iter_at_mark(&buf.get_insert());
-                    window.display_signature(mark);
+                    window.display_signature_editor(mark);
                 }
             ));
 
-        self.imp().tv_frame.connect_insert_at_cursor(move |tv, s| {
-            println!("Inserted {s}");
-            if s == "0" {
-                tv.buffer().insert_at_cursor(s);
-            }
-        });
+        // self.imp().tv_frame.connect_insert_at_cursor(move |tv, s| {
+        //     println!("Inserted {s}");
+        //     if s == "0" {
+        //         tv.buffer().insert_at_cursor(s);
+        //     }
+        // });
 
         self.imp().tv_frame.buffer().connect_changed(clone!(
             #[weak(rename_to=window)]
@@ -286,6 +305,46 @@ impl Window {
             #[weak(rename_to=window)]
             self,
             move |_| window.run_buffer()
+        ));
+
+        self.imp().btn_term_top.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.term_scroll_to_top()
+        ));
+        self.imp().btn_term_up.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.term_scroll_up()
+        ));
+
+        self.imp().btn_term_down.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.term_scroll_down()
+        ));
+        self.imp().btn_term_bottom.connect_clicked(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.term_scroll_to_end()
+        ));
+
+        self.imp().txt_term.connect_activate(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.run_term()
+        ));
+
+        self.imp().txt_term.connect_changed(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.display_signature_term()
+        ));
+
+        self.imp().tv_term.buffer().connect_changed(clone!(
+            #[weak(rename_to=window)]
+            self,
+            move |_| window.term_scroll_to_end()
         ));
 
         self.imp().btn_comment.connect_clicked(clone!(
@@ -350,11 +409,19 @@ impl Window {
         self.refresh_signature();
     }
 
-    fn task_at_mark(&self) -> (TextIter, TextIter) {
+    fn task_betwn_marks(&self, s: &TextIter, e: &TextIter) -> Option<Vec<Task>> {
+        let buf = self.imp().tv_frame.buffer();
+        let text = buf.text(s, e, true);
+        let tokens = tokenizer::get_tokens(&text).ok()?;
+        nadi_core::parser::tasks::parse(tokens).ok()
+    }
+
+    fn task_at_mark(&self) -> (TextIter, String, Vec<Task>) {
         let buf = self.imp().tv_frame.buffer();
         let mut ins = buf.iter_at_mark(&buf.get_insert());
         let mut line = ins.line();
         let mut mark;
+        let mut tasks = vec![];
         loop {
             // seek backwards until we find a task keyword to find the start
             if line < 0 {
@@ -364,14 +431,14 @@ impl Window {
             mark = buf.iter_at_line(line).unwrap();
             let ins2 = buf.iter_at_line(line + 1).unwrap();
             let text = buf.text(&mark, &ins2, true);
-            let tkns = match tokenizer::get_tokens(&text) {
+            let task_tokens = match tokenizer::get_tokens(&text) {
                 Ok(t) => t,
                 Err(_) => {
                     line -= 1;
                     continue;
                 }
             };
-            let tokens = tokenizer::VecTokens::new(tkns);
+            let tokens = tokenizer::VecTokens::new(task_tokens);
             let start_ok = match tokens.peek_next_no_ws(true) {
                 Some(t) => match t.ty {
                     TaskToken::Keyword(TaskKeyword::In)
@@ -387,7 +454,7 @@ impl Window {
                 break;
             }
         }
-        let mut text: String;
+        let mut text = String::new();
         let mut line = ins.line();
         loop {
             // seek forward until we have a complete task
@@ -400,17 +467,18 @@ impl Window {
                 }
             };
             text = buf.text(&mark, &ins, true).trim().to_string();
-            let tokens = match tokenizer::get_tokens(&text) {
+            let task_tokens = match tokenizer::get_tokens(&text) {
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            if tokens.iter().any(|t| t.ty == TaskToken::Quote) {
+            if task_tokens.iter().any(|t| t.ty == TaskToken::Quote) {
                 // there is unclosed string there
                 ()
             } else {
-                match nadi_core::parser::tasks::parse(tokens) {
+                match nadi_core::parser::tasks::parse(task_tokens) {
                     Ok(v) => {
                         if !v.is_empty() {
+                            tasks = v;
                             break;
                         }
                     }
@@ -421,14 +489,14 @@ impl Window {
                 }
             };
         }
-        (mark, ins)
+        (ins, text, tasks)
     }
 
     fn run_func(&self) {
         let buf = self.imp().tv_frame.buffer();
-        let (mark, ins) = self.task_at_mark();
-        let text = buf.text(&mark, &ins, true);
-        self.run_tasks(&text);
+        let (ins, tokens, tasks) = self.task_at_mark();
+        self.feed_term_tasks(&tokens);
+        self.run_tasks(tasks);
         buf.place_cursor(&ins);
         self.imp()
             .tv_frame
@@ -446,88 +514,114 @@ impl Window {
                 ins.forward_to_line_end();
             }
         };
-        self.run_tasks(buf.text(&mark, &ins, true).trim());
-        // ins.forward_cursor_position();
-        // buf.place_cursor(&ins);
-        // buf.notify("cursor-position");
+        self.feed_term_tasks(&buf.text(&mark, &ins, true));
+        if let Some(t) = self.task_betwn_marks(&mark, &ins) {
+            self.run_tasks(t);
+        }
     }
 
     fn run_buffer(&self) {
         let buf = self.imp().tv_frame.buffer();
         let mark = buf.start_iter();
         let ins = buf.end_iter();
-        self.run_tasks(buf.text(&ins, &mark, true).trim());
+        self.feed_term_tasks(&buf.text(&mark, &ins, true));
+        if let Some(t) = self.task_betwn_marks(&mark, &ins) {
+            self.run_tasks(t);
+        }
     }
 
-    fn run_tasks(&self, txt: &str) {
-        let term = &self.imp().term_main;
-        let darea = &self.imp().da_network;
-        if txt.trim() == "help" {
-            term.feed(b"TODO: Help \r\n");
-            return;
-        }
-        match tokenizer::get_tokens(&txt) {
-            Ok(tokens) => {
-                for t in &tokens {
-                    term.feed(t.colored().replace("\n", "\r\n").as_bytes());
+    fn run_term(&self) {
+        let text = self.imp().txt_term.text();
+        self.feed_term_tasks(&text);
+        match tokenizer::get_tokens(&text) {
+            Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
+                Ok(t) => {
+                    self.run_tasks(t);
+                    self.imp().txt_term.set_text("");
                 }
-                term.feed(b"\r\n");
-                match nadi_core::parser::tasks::parse(tokens) {
-                    Ok(tasks) => {
-                        run_tasks(term, darea, tasks);
-                    }
-                    Err(e) => {
-                        term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-                        term.feed(b"\r\n");
-                    }
+                Err(e) => {
+                    self.term_parse_err(e);
                 }
-            }
+            },
             Err(e) => {
-                term.feed(e.user_msg(None).replace("\n", "\r\n").as_bytes());
-                term.feed(b"\r\n");
+                self.feed_term_markup(&e.user_msg(None));
             }
         }
-        term_prompt(&term);
+    }
+
+    fn run_tasks(&self, tasks: Vec<Task>) {
+        let term = &self.imp().tv_term;
+        let tasks_ctx =
+            if let Some(ctx) = unsafe { self.imp().da_network.data::<TaskContext>("tasks_ctx") } {
+                let ctx: &mut TaskContext = unsafe { &mut *ctx.as_ptr() };
+                ctx
+            } else {
+                term.buffer()
+                    .insert_at_cursor("No Task Context Set; shouldn't happen; contact developers");
+                return;
+            };
+        // temp solution, make NadiFunctions take a std::io::Write or
+        // other trait object that can either print to stdout, or take the
+        // result to show somewhere else (like here)
+        let mut buf = gag::BufferRedirect::stdout().unwrap();
+        let mut output = String::new();
+
+        let total = tasks.len();
+        for (i, fc) in tasks.into_iter().enumerate() {
+            let res = tasks_ctx.execute(fc);
+            // print the stdout output to the terminal
+            buf.read_to_string(&mut output).unwrap();
+            self.feed_term_text(&output);
+            output.clear();
+            match res {
+                Ok(Some(p)) => {
+                    self.feed_term_text(&p);
+                    self.feed_term_text("\n");
+                }
+                Err(p) => {
+                    self.feed_term_text(&p);
+                    self.feed_term_text("\n");
+                    break;
+                }
+                _ => (),
+            }
+            self.imp()
+                .pb_term
+                .set_fraction((i + 1) as f64 / total as f64);
+            self.imp()
+                .pb_term
+                .set_tooltip_text(Some(&format!("{} of {}", i + 1, total)));
+        }
+        self.term_prompt();
         // since the task could have changed the network properties
-        darea.queue_draw();
+        self.imp().da_network.queue_draw();
     }
 
     fn refresh_signature(&self) {
         let buf = self.imp().tv_frame.buffer();
         let mark = buf.iter_at_mark(&buf.get_insert());
-        self.display_signature(mark);
+        self.display_signature_editor(mark);
     }
 
     fn help_line(&self) {
-        let buf = self.imp().tv_frame.buffer();
-        let mark = buf.iter_at_mark(&buf.get_insert());
-        let mut end = buf.iter_at_line(mark.line()).expect("should be valid line");
-        let start = end;
-        end.forward_line();
-        let line = buf.text(&start, &end, false);
-        if let Ok(tags) = tokenizer::get_tokens(&line) {
-            if let Some(t) = tags
-                .into_iter()
-                .filter(|t| t.ty == TaskToken::Function)
-                .next()
-            {
-                if line.trim().starts_with("node") {
-                    self.run_tasks(&format!("help node {}", t.content))
-                } else if line.trim().starts_with("net") {
-                    self.run_tasks(&format!("help network {}", t.content))
-                } else {
-                    self.run_tasks(&format!("help {}", t.content))
-                }
-            }
-        }
+        self.feed_term_markup(&self.imp().btn_sig.tooltip_markup().unwrap_or_default());
     }
 
-    fn display_signature(&self, mark: TextIter) {
+    fn display_signature_editor(&self, mark: TextIter) {
         let buf = self.imp().tv_frame.buffer();
         let mut end = buf.iter_at_line(mark.line()).expect("should be valid line");
         let start = end;
         end.forward_line();
         let line = buf.text(&start, &end, false);
+        self.display_signature(&line);
+    }
+
+    fn display_signature_term(&self) {
+        let line = self.imp().txt_term.text();
+        self.display_signature(&line);
+    }
+
+    fn display_signature(&self, line: &str) {
         match tokenizer::get_tokens(&line) {
             Ok(tags) => {
                 if let Some(t) = tags
@@ -547,43 +641,43 @@ impl Window {
                         tasks_ctx
                             .functions
                             .node(&t.content)
-                            .map(|f| (f.args(), f.short_help()))
+                            .map(|f| (f.args(), f.short_help(), f.help()))
                             .or_else(|| {
                                 tasks_ctx
                                     .functions
                                     .env(&t.content)
-                                    .map(|f| (f.args(), f.short_help()))
+                                    .map(|f| (f.args(), f.short_help(), f.help()))
                             })
                     } else if line.trim().starts_with("net") {
                         tasks_ctx
                             .functions
                             .network(&t.content)
-                            .map(|f| (f.args(), f.short_help()))
+                            .map(|f| (f.args(), f.short_help(), f.help()))
                             .or_else(|| {
                                 tasks_ctx
                                     .functions
                                     .env(&t.content)
-                                    .map(|f| (f.args(), f.short_help()))
+                                    .map(|f| (f.args(), f.short_help(), f.help()))
                             })
                     } else {
                         tasks_ctx
                             .functions
                             .env(&t.content)
-                            .map(|f| (f.args(), f.short_help()))
+                            .map(|f| (f.args(), f.short_help(), f.help()))
                             .or_else(|| {
                                 tasks_ctx
                                     .functions
                                     .node(&t.content)
-                                    .map(|f| (f.args(), f.short_help()))
+                                    .map(|f| (f.args(), f.short_help(), f.help()))
                                     .or_else(|| {
                                         tasks_ctx
                                             .functions
                                             .network(&t.content)
-                                            .map(|f| (f.args(), f.short_help()))
+                                            .map(|f| (f.args(), f.short_help(), f.help()))
                                     })
                             })
                     };
-                    if let Some((args, help)) = func {
+                    if let Some((args, help, fullhelp)) = func {
                         let args_color: Vec<String> = args
                             .iter()
                             .map(|f| {
@@ -632,7 +726,9 @@ impl Window {
                         for (a, ac) in args.into_iter().zip(args_color) {
                             sig.push_str(&format!("- {} : {}\n", ac, a.help));
                         }
-                        sig.push_str("</span>");
+                        sig.push_str("</span>\n<span size=\"small\"><b>Description:</b>\n");
+                        sig.push_str(fullhelp[help.len()..].trim());
+                        sig.push_str("</span>\n");
                         self.imp().btn_sig.set_tooltip_markup(Some(&sig));
                     } else {
                         let sig = format!("<span size=\"small\"><span foreground=\"purple\">{}</span>()</span>\n<span foreground=\"red\" size=\"small\">Function Does Not Exist. Please Make sure you spelled it correct, or loaded all plugins.</span>", &t.content);
@@ -695,7 +791,7 @@ impl Window {
             .authors(["Gaurav Atreya <allmanpride@gmail.com>"])
             .license_type(gtk::License::Gpl30)
             .build();
-        diag.show();
+        diag.present();
     }
 
     pub fn export(&self) {
@@ -728,17 +824,11 @@ impl Window {
     }
 
     pub fn reload_network(&self) -> anyhow::Result<()> {
-        let buf = self.imp().tv_frame.buffer();
-        let txt = buf
-            .text(&buf.start_iter(), &buf.end_iter(), true)
-            .to_string();
-        let tm = &self.imp().term_main;
         let tasks_ctx = TaskContext::new(None);
         unsafe {
             self.imp().da_network.set_data("tasks_ctx", tasks_ctx);
         }
-        self.run_tasks(&txt);
-        term_prompt(&tm);
+        self.run_buffer();
         self.imp().da_network.queue_draw();
         Ok(())
     }
@@ -865,230 +955,160 @@ impl Window {
     }
 
     fn setup_term(&self) {
-        let term = &self.imp().term_main;
-        term.feed(b"Nadi Terminal: Run nadi tasks here.");
-        term_prompt(term);
-        unsafe { term.set_data("current_line", String::new()) };
-        let da = &self.imp().da_network;
-        term.connect_commit(clone!(
-            #[weak(rename_to=window)]
-            self,
-            #[weak]
-            da,
-            move |tm, ch, flag| {
-                if flag != 1 {
-                    // todo handle other keypress than chars
-                    return;
-                }
-                // println!("{ch:?} {flag}");
-                match ch {
-                    "\r" => {
-                        let line: &mut String =
-                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
-                        match line.trim() {
-                            "" => (),
-                            "clear" => tm.feed(b"\r\x1B[2J"),
-                            l => {
-                                term_prompt(&tm);
-                                window.run_tasks(&l);
-                                // since the task could have changed the network properties
-                                da.queue_draw();
-                            }
-                        };
-                        line.clear();
-                        term_prompt(&tm);
-                    }
-                    // Ctrl+C
-                    "\u{3}" => {
-                        let line: &mut String =
-                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
-                        line.clear();
-                        tm.feed(b" ^C\r\n");
-                        term_prompt(&tm);
-                    }
-                    // backspace
-                    "\u{8}" => {
-                        let line: &mut String =
-                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
-                        if line.pop().is_some() {
-                            tm.feed(ch.as_bytes());
-                        }
-                    }
-                    // tab
-                    "\u{9}" => {
-                        let line: &mut String =
-                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
-                        let cmd: Vec<String> =
-                            line.trim().split(' ').map(|s| s.to_string()).collect();
-                        match cmd[0].as_str() {
-                            "node" => {
-                                let f = nadi_functions(&da);
-                                let funcs: Vec<&str> = f
-                                    .node_alias()
-                                    .keys()
-                                    .chain(f.node_functions().keys())
-                                    .map(|k| k.as_str())
-                                    .collect();
-                                let rest = cmd.get(1).map(|s| s.as_str()).unwrap_or_default();
-                                completion(tm, line, rest, &funcs);
-                            }
-                            "network" => {
-                                let f = nadi_functions(&da);
-                                let funcs: Vec<&str> = f
-                                    .network_alias()
-                                    .keys()
-                                    .chain(f.network_functions().keys())
-                                    .map(|k| k.as_str())
-                                    .collect();
-                                let rest = cmd.get(1).map(|s| s.as_str()).unwrap_or_default();
-                                completion(tm, line, rest, &funcs);
-                            }
-                            "help" => {
-                                let f = nadi_functions(&da);
-                                match cmd.get(1).map(|s| s.as_str()).unwrap_or_default() {
-                                    "node" => {
-                                        let funcs: Vec<&str> = f
-                                            .node_alias()
-                                            .keys()
-                                            .chain(f.node_functions().keys())
-                                            .map(|k| k.as_str())
-                                            .collect();
-                                        let rest =
-                                            cmd.get(2).map(|s| s.as_str()).unwrap_or_default();
-                                        completion(tm, line, rest, &funcs);
-                                    }
-                                    "network" => {
-                                        let funcs: Vec<&str> = f
-                                            .network_alias()
-                                            .keys()
-                                            .chain(f.network_functions().keys())
-                                            .map(|k| k.as_str())
-                                            .collect();
-                                        let rest =
-                                            cmd.get(2).map(|s| s.as_str()).unwrap_or_default();
-                                        completion(tm, line, rest, &funcs);
-                                    }
-                                    rest => {
-                                        let mut funcs: Vec<&str> = vec!["node", "network"];
-                                        funcs.extend(f.node_alias().keys().map(|k| k.as_str()));
-                                        funcs.extend(f.node_functions().keys().map(|k| k.as_str()));
-                                        funcs.extend(f.network_alias().keys().map(|k| k.as_str()));
-                                        funcs.extend(
-                                            f.network_functions().keys().map(|k| k.as_str()),
-                                        );
-                                        completion(tm, line, rest, &funcs);
-                                    }
-                                }
-                            }
-                            x => completion(tm, line, x, &["node", "network", "help"]),
-                        }
-                    }
-                    _ => {
-                        let line: &mut String =
-                            unsafe { &mut *tm.data::<String>("current_line").unwrap().as_ptr() };
-                        line.push_str(&ch);
-                        tm.feed(ch.as_bytes());
-                    }
-                };
-            }
+        let term = &self.imp().tv_term;
+        term.buffer()
+            .insert_at_cursor("Nadi Terminal: Run nadi tasks here.");
+        self.term_prompt();
+        unsafe { term.set_data("history", Vec::<String>::new()) };
+        term.buffer()
+            .create_mark(Some("endmark"), &term.buffer().end_iter(), false);
+    }
+
+    // this is also used by the commands instead of just the button,
+    // so I'm trying my best to make it work any time, but I think it
+    // can't work without taking it out and delaying this activation
+    // to let the textview can calculate/render, it'd work well
+    fn term_scroll_to_end(&self) {
+        let mark = self
+            .imp()
+            .tv_term
+            .buffer()
+            .mark("endmark")
+            .unwrap_or_else(|| {
+                let buf = self.imp().tv_term.buffer();
+                buf.create_mark(Some("endmark"), &buf.end_iter(), false)
+            });
+        self.imp().tv_term.scroll_mark_onscreen(&mark);
+    }
+    fn term_scroll_to_top(&self) {
+        self.imp().tv_term.scroll_to_iter(
+            &mut self.imp().tv_term.buffer().start_iter(),
+            0.0,
+            false,
+            0.0,
+            0.0,
+        );
+    }
+    fn term_scroll_up(&self) {
+        let buf = self.imp().tv_term.buffer();
+        let mut ins = buf.iter_at_mark(&buf.get_insert());
+        ins.backward_lines(5);
+        self.imp()
+            .tv_term
+            .scroll_to_iter(&mut ins, 0.0, false, 0.0, 0.0);
+        buf.place_cursor(&ins);
+    }
+    fn term_scroll_down(&self) {
+        let buf = self.imp().tv_term.buffer();
+        let mut ins = buf.iter_at_mark(&buf.get_insert());
+        ins.forward_lines(5);
+        self.imp()
+            .tv_term
+            .scroll_to_iter(&mut ins, 0.0, false, 0.0, 0.0);
+        buf.place_cursor(&ins);
+    }
+
+    fn term_prompt(&self) {
+        self.feed_term_markup("\n<span fgcolor=\"blue\">&gt;&gt;</span> ")
+    }
+
+    fn term_parse_err(&self, err: ParseError) {
+        self.feed_term_markup("\n<span fgcolor=\"red\">Error</span>: ");
+        self.feed_term_markup(&format!(
+            "ParseError at Line {} Column {}\n",
+            err.line, err.col
         ));
-    }
-}
-
-fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
-    if let Some(ctx) = unsafe { darea.data::<TaskContext>("tasks_ctx") } {
-        let ctx: &TaskContext = unsafe { &*ctx.as_ptr() };
-        &ctx.functions
-    } else {
-        panic!("Functions not found");
-    }
-}
-
-fn run_tasks(term: &vte4::Terminal, darea: &gtk::DrawingArea, tasks: Vec<nadi_core::tasks::Task>) {
-    let mut skin = termimad::MadSkin::default_dark();
-    for h in &mut skin.headers {
-        h.align = termimad::Alignment::Left;
-    }
-    let tasks_ctx = if let Some(ctx) = unsafe { darea.data::<TaskContext>("tasks_ctx") } {
-        let ctx: &mut TaskContext = unsafe { &mut *ctx.as_ptr() };
-        ctx
-    } else {
-        term.feed(b"No Task Context Set; shouldn't happen; contact developers");
-        return;
-    };
-    // temp solution, make NadiFunctions take a std::io::Write or
-    // other trait object that can either print to stdout, or take the
-    // result to show somewhere else (like here)
-    let mut buf = gag::BufferRedirect::stdout().unwrap();
-    let mut output = String::new();
-
-    for fc in tasks {
-        let res = tasks_ctx.execute(fc);
-        // print the stdout output to the terminal
-        buf.read_to_string(&mut output).unwrap();
-        term.feed(output.replace("\n", "\r\n").as_bytes());
-        output.clear();
-        match res {
-            Ok(Some(p)) => {
-                term.feed(p.replace("\n", "\r\n").as_bytes());
-                term.feed(b"\r\n");
-            }
-            Err(p) => {
-                term.feed(p.replace("\n", "\r\n").as_bytes());
-                term.feed(b"\r\n");
-                break;
-            }
-            _ => (),
+        self.feed_term_markup(&format!("  {}\n", err.linestr));
+        self.feed_term_markup(&format!(
+            "  {: >2$} <span fgcolor=\"yellow\">{}</span>",
+            "^",
+            err.ty.message(),
+            err.col + 1
+        ));
+        if let ParseErrorType::LogicalError(s) = &err.ty {
+            self.feed_term_markup(&format!("\n  <span fgcolor=\"red\">{}</span>", s));
         }
+        self.term_prompt();
+    }
+
+    fn feed_term_text(&self, txt: &str) {
+        let buf = self.imp().tv_term.buffer();
+        buf.insert(&mut buf.end_iter(), txt);
+    }
+
+    fn feed_term_markup(&self, txt: &str) {
+        let buf = self.imp().tv_term.buffer();
+        buf.insert_markup(&mut buf.end_iter(), txt);
+    }
+
+    fn feed_term_tasks(&self, tasks: &str) {
+        let tokens = match tokenizer::get_tokens(&tasks) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let buf = self.imp().tv_term.buffer();
+        let markup = tokens.iter().map(|t| t.markup()).join("");
+        buf.insert_markup(&mut buf.end_iter(), &markup);
+        buf.insert(&mut buf.end_iter(), "\n");
+        // for line in markup.split("<br>") {
+        //     buf.insert_markup(&mut buf.end_iter(), line);
+        //     println!("{line}");
+        //     buf.insert(&mut buf.end_iter(), "\n");
+        // }
     }
 }
 
-fn term_prompt(tm: &vte4::Terminal) {
-    tm.feed(format!("\r\x1B[0J{} ", ">>".blue()).as_bytes())
-}
+// fn nadi_functions(darea: &gtk::DrawingArea) -> &NadiFunctions {
+//     if let Some(ctx) = unsafe { darea.data::<TaskContext>("tasks_ctx") } {
+//         let ctx: &TaskContext = unsafe { &*ctx.as_ptr() };
+//         &ctx.functions
+//     } else {
+//         panic!("Functions not found");
+//     }
+// }
 
-fn completion(tm: &vte4::Terminal, line: &mut String, pre: &str, options: &[&str]) {
-    let mut pos = options.iter().filter_map(|p| p.strip_prefix(pre));
-    match pos.clone().count() {
-        0 => tm.feed(&[7]), // bell
-        1 => {
-            let comp = pos.next().unwrap();
-            line.push_str(comp);
-            tm.feed(comp.as_bytes());
-        }
-        _ => {
-            tm.feed(b"\r\n");
-            tm.feed(
-                pos.clone()
-                    .map(|y| format!("{pre}{y}"))
-                    .join(" ")
-                    .as_bytes(),
-            );
-            term_prompt(tm);
-            // add the common prefix from the alternatives
-            let pos: Vec<&str> = pos.collect();
-            let common = common_prefix(&pos);
-            line.push_str(common);
-            tm.feed(line.as_bytes());
-        }
-    }
-}
+// fn completion(tm: &gtk::TextView, line: &mut String, pre: &str, options: &[&str]) {
+//     let mut pos = options.iter().filter_map(|p| p.strip_prefix(pre));
+//     match pos.clone().count() {
+//         0 => tm.feed(&[7]), // bell
+//         1 => {
+//             let comp = pos.next().unwrap();
+//             line.push_str(comp);
+//             tm.feed(comp.as_bytes());
+//         }
+//         _ => {
+//             tm.feed(b"\r\n");
+//             tm.feed(
+//                 pos.clone()
+//                     .map(|y| format!("{pre}{y}"))
+//                     .join(" ")
+//                     .as_bytes(),
+//             );
+//             term_prompt(tm);
+//             // add the common prefix from the alternatives
+//             let pos: Vec<&str> = pos.collect();
+//             let common = common_prefix(&pos);
+//             line.push_str(common);
+//             tm.feed(line.as_bytes());
+//         }
+//     }
+// }
 
-fn common_prefix<'a>(strs: &'a [&str]) -> &'a str {
-    if strs.is_empty() {
-        return "";
-    }
-    let mut pre = strs[0].len();
-    for s in strs.iter() {
-        while !s.starts_with(&strs[0][0..pre]) {
-            if pre <= 0 {
-                return "";
-            }
-            pre -= 1; // Shorten the prefix
-        }
-    }
-    &strs[0][0..pre]
-}
+// fn common_prefix<'a>(strs: &'a [&str]) -> &'a str {
+//     if strs.is_empty() {
+//         return "";
+//     }
+//     let mut pre = strs[0].len();
+//     for s in strs.iter() {
+//         while !s.starts_with(&strs[0][0..pre]) {
+//             if pre <= 0 {
+//                 return "";
+//             }
+//             pre -= 1; // Shorten the prefix
+//         }
+//     }
+//     &strs[0][0..pre]
+// }
 
 fn apply_tags(point: &mut TextIter, tb: &TextBuffer) {
     let text = tb.text(&point, &tb.end_iter(), true);

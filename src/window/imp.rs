@@ -1,9 +1,6 @@
-use std::cell::RefCell;
-
 use glib::subclass::InitializingObject;
 use gtk::subclass::prelude::*;
 use gtk::{glib, CompositeTemplate};
-use nadi_core::network::Network;
 
 // Object holding the state
 #[derive(CompositeTemplate, Default)]
@@ -40,8 +37,19 @@ pub struct Window {
     #[template_child]
     pub btn_export: TemplateChild<gtk::Button>,
     #[template_child]
-    pub term_main: TemplateChild<vte4::Terminal>,
-    pub network: RefCell<Option<Network>>,
+    pub btn_term_top: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub btn_term_up: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub btn_term_down: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub btn_term_bottom: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub txt_term: TemplateChild<gtk::Entry>,
+    #[template_child]
+    pub pb_term: TemplateChild<gtk::ProgressBar>,
+    #[template_child]
+    pub tv_term: TemplateChild<gtk::TextView>,
 }
 
 // The central trait for subclassing a GObject

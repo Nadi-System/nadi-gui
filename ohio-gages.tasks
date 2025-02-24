@@ -5,6 +5,8 @@ network gis_load_attrs("/home/gaurav/github/nadi/conus/gis-final/usgs-drainage.c
 # num dams and gages from another analysis
 network gis_load_attrs("/home/gaurav/work/nadi-project/codes/nadi-gis/data/ohio-count.gpkg", "NAME")
 
+end
+
 node.inputs = inputs_len()
 node.drain_a = get_attr("Drainage", 0.0)
 node.inputs_d = inputs("drain_a")

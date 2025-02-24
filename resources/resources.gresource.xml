@@ -10,5 +10,9 @@
     <file preprocess="xml-stripblanks">icons/run-function.svg</file>
     <file preprocess="xml-stripblanks">icons/sync.svg</file>
     <file preprocess="xml-stripblanks">icons/nadi.svg</file>
+    <file preprocess="xml-stripblanks">icons/top.svg</file>
+    <file preprocess="xml-stripblanks">icons/up.svg</file>
+    <file preprocess="xml-stripblanks">icons/down.svg</file>
+    <file preprocess="xml-stripblanks">icons/bottom.svg</file>
   </gresource>
 </gresources>

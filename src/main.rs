@@ -1,5 +1,6 @@
 mod colors;
 mod network;
+mod tokens;
 mod window;
 
 use gtk::gio::ApplicationFlags;
@@ -64,6 +65,14 @@ drawingarea {
   background-color: red;
   border-radius: 10px;
   padding: 5px;
+}
+
+placeholder {
+color: gray;
+}
+
+#lab_term {
+color: blue;
 }
 
 ",

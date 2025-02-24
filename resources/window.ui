@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
+  <object class="GtkTextBuffer" id="buf_term">
+  </object>
   <object class="GtkTextBuffer" id="buf_frame">
     <property name="tag-table">
       <object class="GtkTextTagTable">
@@ -370,20 +372,89 @@
 		</object>
 	      </property>
 	      <property name="end-child">
+	    <object class="GtkBox">
+	      <property name="hexpand">1</property>
+	      <property name="margin-top">10</property>
+	      <property name="spacing">5</property>
+	      <property name="orientation">vertical</property>
+	  <child>
+	    <object class="GtkBox">
+	      <property name="hexpand">1</property>
+	      <property name="spacing">10</property>
+	      <child>
+		<object class="GtkButton" id="btn_term_top">
+		  <property name="icon-name">top</property>
+		  <property name="tooltip-text">Goto the top</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkButton" id="btn_term_up">
+		  <property name="icon-name">up</property>
+		  <property name="tooltip-text">Goto the end</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkButton" id="btn_term_down">
+		  <property name="icon-name">down</property>
+		  <property name="tooltip-text">Goto the top</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkButton" id="btn_term_bottom">
+		  <property name="icon-name">bottom</property>
+		  <property name="tooltip-text">Goto the end</property>
+		</object>
+	      </child>
+	  <child>
+	    <object class="GtkLabel">
+              <property name="hexpand">1</property>
+	      <property name="label">NADI Terminal</property>
+	    </object>
+	  </child>
+	    </object>
+	  </child>
+	  <child>
 		<object class="GtkScrolledWindow">
-		  <property name="hexpand">True</property>
+		  <property name="hexpand">False</property>
 		  <property name="vexpand">True</property>
 		  <child>
-		    <object class="VteTerminal" id="term_main">
-		      <property name="scrollback-lines">-1</property>
+		    <object class="GtkTextView" id="tv_term">
 		      <property name="vexpand">1</property>
-		      <property name="allow-hyperlink">1</property>
-		      <property name="input-enabled">1</property>
-		      <property name="scroll-on-keystroke">1</property>
-		      <property name="scroll-on-output">1</property>
+		      <property name="focusable">1</property>
+		      <property name="input-purpose">terminal</property>
+		      <property name="monospace">1</property>
+		      <property name="buffer">buf_term</property>
+                      <property name="editable">False</property>
 		    </object>
 		  </child>
 		</object>
+	  </child>
+	  <child>
+	    <object class="GtkProgressBar" id="pb_term">
+              <property name="hexpand">1</property>
+	    </object>
+	  </child>
+	  <child>
+	    <object class="GtkBox">
+	      <property name="hexpand">1</property>
+	      <property name="spacing">10</property>
+	      <child>
+		<object class="GtkLabel">
+                  <property name="name">lab_term</property>
+                  <property name="hexpand">0</property>
+		  <property name="label">&gt;&gt;</property>
+		</object>
+	      </child>
+	      <child>
+		<object class="GtkEntry" id="txt_term">
+                  <property name="hexpand">1</property>
+                  <property name="editable">True</property>
+                  <property name="placeholder-text">Nadi Task Command</property>
+		</object>
+	      </child>
+		</object>
+	      </child>
+	    </object>
               </property>
 	    </object>
 	  </child>
